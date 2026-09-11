@@ -106,7 +106,7 @@ credentials: 'include'
 | UP 主昵称 | `modules.module_author.name` | ✅ |
 | UP 主头像 | `modules.module_author.face` | ✅ 已是 `https://` |
 | UP 主 mid | `modules.module_author.mid` | ✅ number |
-| 发布时间 | ~~`modules.module_dynamic.major.archive.pubdate`~~ | ❌ **实测为 `undefined`，该路径不存在**。真实位置待确认（预期 `modules.module_author.pub_ts`，秒级时间戳） |
+| 发布时间 | `modules.module_author.pub_ts` | ✅ **已确认**。⚠️ 是**字符串**、**秒级**时间戳（如 `'1789126620'`），须 `Number()` 后 ×1000 使用。`archive` 内**没有**任何时间字段 |
 | 跳转链接 | `https://www.bilibili.com/video/{bvid}` | 拼接得出 |
 
 ### 实测发现（2026-09-11 探针）
@@ -124,9 +124,10 @@ credentials: 'include'
 ### 待实测确认
 
 - ~~该接口是否需要额外签名~~ → **已确认不需要**
-- **发布时间的真实字段路径**（`archive.pubdate` 不存在）
-- `stat.danmaku` 的类型
-- 视频动态是否还有 `DYNAMIC_TYPE_AV` 以外的新版形态
+- ~~发布时间的真实字段路径~~ → **已确认：`modules.module_author.pub_ts`，字符串、秒级**
+- ~~`stat.danmaku` 的类型~~ → **已确认：字符串**（`stat.vt` 同为字符串）
+- 视频动态是否还有 `DYNAMIC_TYPE_AV` 以外的新版形态（未发现）
+- 单页 21 条中 12 条为视频投稿（约 57%）
 
 ## 7. 状态层
 

@@ -10,7 +10,7 @@ export default defineConfig({
       userscript: {
         name: 'B站 只看关注',
         namespace: 'local.bili-follow-feed',
-        version: '0.1.0',
+        version: '0.1.1',
         description: '只显示已关注 UP 主的视频投稿',
         match: ['https://www.bilibili.com/*'],
         'run-at': 'document-start',

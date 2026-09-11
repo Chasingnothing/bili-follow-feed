@@ -95,19 +95,27 @@ credentials: 'include'
 
 从响应 `data.items[]` 中筛选 `type === 'DYNAMIC_TYPE_AV'`：
 
-| 卡片字段 | 响应路径 |
-|---|---|
-| 封面 | `modules.module_dynamic.major.archive.cover` |
-| 时长 | `modules.module_dynamic.major.archive.duration_text` |
-| 标题 | `modules.module_dynamic.major.archive.title` |
-| 播放量 | `modules.module_dynamic.major.archive.stat.play` |
-| 弹幕数 | `modules.module_dynamic.major.archive.stat.danmaku` |
-| BVID | `modules.module_dynamic.major.archive.bvid` |
-| UP 主昵称 | `modules.module_author.name` |
-| UP 主头像 | `modules.module_author.face` |
-| UP 主 mid | `modules.module_author.mid` |
-| 发布时间 | `modules.module_dynamic.major.archive.pubdate` |
-| 跳转链接 | `https://www.bilibili.com/video/{bvid}` |
+| 卡片字段 | 响应路径 | 实测状态（2026-09-11） |
+|---|---|---|
+| 封面 | `modules.module_dynamic.major.archive.cover` | ✅ 存在，但返回 **`http://`**，须改写为 `https://`，否则 HTTPS 页面按混合内容拦截，封面全碎 |
+| 时长 | `modules.module_dynamic.major.archive.duration_text` | ✅ 字符串，如 `07:00:53` |
+| 标题 | `modules.module_dynamic.major.archive.title` | ✅ |
+| 播放量 | `modules.module_dynamic.major.archive.stat.play` | ⚠️ **字符串**（如 `'59'`），必须 `Number()` 转换 |
+| 弹幕数 | `modules.module_dynamic.major.archive.stat.danmaku` | 待确认类型（预期同为字符串） |
+| BVID | `modules.module_dynamic.major.archive.bvid` | ✅ |
+| UP 主昵称 | `modules.module_author.name` | ✅ |
+| UP 主头像 | `modules.module_author.face` | ✅ 已是 `https://` |
+| UP 主 mid | `modules.module_author.mid` | ✅ number |
+| 发布时间 | ~~`modules.module_dynamic.major.archive.pubdate`~~ | ❌ **实测为 `undefined`，该路径不存在**。真实位置待确认（预期 `modules.module_author.pub_ts`，秒级时间戳） |
+| 跳转链接 | `https://www.bilibili.com/video/{bvid}` | 拼接得出 |
+
+### 实测发现（2026-09-11 探针）
+
+- `code = 0`，**不需要 WBI 签名、不需要 `bili_ticket`**
+- 单页 21 条，`has_more: true`，`offset` 为非空字符串（如 `"1246757288675377154"`）
+- 单页出现的动态类型：`DYNAMIC_TYPE_AV`、`DYNAMIC_TYPE_DRAW`、`DYNAMIC_TYPE_LIVE_RCMD`、`DYNAMIC_TYPE_FORWARD`
+- **`DYNAMIC_TYPE_LIVE_RCMD` 是直播推荐位（推广内容），必须过滤**
+- 封面域名为 `i0.hdslb.com` / `i1.hdslb.com`，返回 `http://` 协议
 
 ### 分页
 
@@ -115,9 +123,10 @@ credentials: 'include'
 
 ### 待实测确认
 
-- 该接口是否需要额外签名（WBI `w_rid` / `bili_ticket` / `buvid`）
-- 视频动态的具体 `type` 取值是否只有 `DYNAMIC_TYPE_AV`（可能还有新版 opus 形态）
-- 单页返回条数与翻页深度上限
+- ~~该接口是否需要额外签名~~ → **已确认不需要**
+- **发布时间的真实字段路径**（`archive.pubdate` 不存在）
+- `stat.danmaku` 的类型
+- 视频动态是否还有 `DYNAMIC_TYPE_AV` 以外的新版形态
 
 ## 7. 状态层
 

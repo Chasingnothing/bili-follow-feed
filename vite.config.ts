@@ -18,6 +18,11 @@ export default defineConfig({
       build: { fileName: 'bili-follow-feed.user.js' },
     }),
   ],
+  // Vite 8 / Rolldown 下产物默认没有被压缩（实测 588 KB，变量名与缩进都保留）。
+  // 用户脚本会在每个 bilibili.com 页面加载，体积直接等于页面开销，必须显式压缩。
+  build: {
+    minify: true,
+  },
   test: {
     environment: 'jsdom',
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],

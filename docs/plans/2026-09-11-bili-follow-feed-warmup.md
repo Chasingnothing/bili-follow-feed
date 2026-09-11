@@ -29,7 +29,15 @@ $env:PYTHONUTF8 = '1'
 
 所有命令的工作目录：`E:\ds\bili-follow-feed`
 
-> **偏差说明**：本计划未使用 git worktree —— 项目目录全新且为空，不存在并行冲突。git 当前**未安装**，见 Task 0。
+> **偏差说明**：本计划未使用 git worktree —— 项目目录全新且为空，不存在并行冲突。
+
+### 实测补充的环境约束（2026-09-11 执行时发现）
+
+- **git 已安装**（2.55.0，winget），仓库已初始化，**Task 0 完成**。
+- **`npx vitest` / `npm run build` 必须全权限**：在 workspace-write 下会在**配置加载阶段**就崩（Vite 需打包配置文件并把缓存写到工作区外，报 `windowsSafeRealPathSync` 路径错误），并非测试本身失败。**建议把多个任务的测试合并成一次运行**，减少审批次数。
+- **`git add` 的行尾转换会改写工作区文件**，触发编辑工具的"文件自读取后已被修改"误报。已加 `.gitattributes`（`* -text`）止住。
+- **npm 走代理**：通过项目内 `.npmrc`（`npm config set ... --location=project`）配置，不污染用户全局配置。
+- **`tsc` 的 `noUnusedLocals` 开着**：测试文件里的未使用 import 会导致构建失败。
 
 ---
 

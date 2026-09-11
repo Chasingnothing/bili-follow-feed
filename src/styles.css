@@ -1,0 +1,180 @@
+/*
+ * 挂载点在 document.documentElement 下（脚本 @run-at document-start，
+ * 此时 document.body 还不存在），所以隐藏的是 body 而不是 body 的子元素。
+ */
+html.bff-active body {
+  display: none !important;
+}
+
+.bff-root {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  background: #18191c;
+  color: #e3e5e7;
+  overflow-y: auto;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+.bff-root * {
+  box-sizing: border-box;
+}
+
+.bff-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 24px;
+  background: #1f2023;
+  border-bottom: 1px solid #2b2c2f;
+}
+.bff-bar strong {
+  font-size: 15px;
+  margin-right: 8px;
+}
+.bff-bar select,
+.bff-bar button {
+  background: #2b2c2f;
+  color: #e3e5e7;
+  border: 1px solid #3a3b3e;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.bff-bar button:hover:not(:disabled) {
+  background: #35363a;
+}
+.bff-bar button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.bff-count {
+  margin-left: auto;
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.bff-grid {
+  display: grid;
+  gap: 20px;
+  padding: 20px 24px 40px;
+  grid-template-columns: repeat(4, 1fr);
+}
+@media (max-width: 1400px) {
+  .bff-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+@media (max-width: 900px) {
+  .bff-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.bff-card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+.bff-card--read {
+  opacity: 0.45;
+}
+.bff-cover-wrap {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #2b2c2f;
+}
+.bff-cover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.bff-duration {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 12px;
+}
+.bff-new {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #fb7299;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+}
+.bff-title {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.4;
+  height: 2.8em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.bff-card:hover .bff-title {
+  color: #fb7299;
+}
+.bff-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #9499a0;
+}
+.bff-face {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  flex: none;
+}
+.bff-up {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bff-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #9499a0;
+}
+.bff-empty {
+  padding: 60px;
+  text-align: center;
+  color: #9499a0;
+}
+.bff-more {
+  text-align: center;
+  padding: 0 24px 48px;
+}
+.bff-more button {
+  background: #2b2c2f;
+  color: #e3e5e7;
+  border: 1px solid #3a3b3e;
+  border-radius: 6px;
+  padding: 8px 24px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.bff-more button:hover:not(:disabled) {
+  background: #35363a;
+}
+.bff-more button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

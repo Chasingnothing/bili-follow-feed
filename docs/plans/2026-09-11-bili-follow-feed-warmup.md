@@ -6,7 +6,11 @@
 
 **Architecture:** 脚本运行在 `bilibili.com` 域下，直接 `fetch` B站 动态聚合流接口（靠浏览器会话携带登录态，不接触 Cookie）。数据经纯函数映射为 `VideoCard`，由 React 渲染；数据访问抽象为 `FeedDataSource` 接口，使同一套 UI 组件后续可直接复用到路线 1 的后端实现。
 
-**Tech Stack:** TypeScript · React 18 · Vite · vite-plugin-monkey · Vitest
+**Tech Stack:** TypeScript · React 19 · Vite 8 · vite-plugin-monkey · Vitest 5
+
+> **实际安装版本（2026-09-11）**：react 19.3.0、vite 8.3.0、vitest 5.0.0、typescript 7.0.2、vite-plugin-monkey 8.1.1、jsdom 29.1.1。计划正文中如提到 React 18，以本行为准。
+
+> **Task 1 已执行完毕**：探针返回 `code = 0`，接口可用、无需签名、翻页正常。同时实测发现设计文档三处字段错误（`stat.play` 是**字符串**、`cover` 是 **`http://`**、`archive.pubdate` **不存在**），已回写设计文档 §6。**Task 3 的 fixture 必须按修正后的字段表编写。**
 
 **设计依据:** `E:\ds\bili-follow-feed\docs\superpowers\specs\2026-09-11-bili-follow-feed-design.md`
 

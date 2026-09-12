@@ -1,5 +1,5 @@
 import type { Group } from '../lib/localGroups';
-import { UNCATEGORIZED_ID } from '../lib/upIndex';
+import { UNCATEGORIZED_ID, HIDDEN_ID } from '../lib/upIndex';
 
 interface Props {
   groups: Group[];
@@ -50,24 +50,27 @@ export default function BatchGroupPanel({
       <div className="bff-batchpanel-list">
         {ordered.map((g) => {
           const isUncat = g.id === UNCATEGORIZED_ID;
+          const isHidden = g.id === HIDDEN_ID;
           const contained = isUncat ? allUncategorized : allContained.has(g.id);
           const hint = isUncat
             ? '移出全部分组（→ 未分类）'
-            : contained
-              ? `选中的 UP 已全部在「${g.name}」里`
-              : `添加到「${g.name}」`;
+            : isHidden
+              ? '隐藏他们的视频（**不取关**，且会移出其他分组）'
+              : contained
+                ? `选中的 UP 已全部在「${g.name}」里`
+                : `添加到「${g.name}」`;
 
           return (
             <button
               key={g.id}
               type="button"
-              className={`bff-folder${contained ? ' is-contained' : ''}`}
+              className={`bff-folder${contained ? ' is-contained' : ''}${isHidden ? ' is-hidden-group' : ''}`}
               disabled={none || contained}
               onClick={() => (isUncat ? onClearAll() : onAdd(g.id))}
               title={hint}
             >
               <span className="bff-folder-icon" aria-hidden>
-                {isUncat ? '🗂️' : '📁'}
+                {isUncat ? '🗂️' : isHidden ? '🙈' : '📁'}
               </span>
               <span className="bff-folder-name">{g.name}</span>
               {contained && <span className="bff-folder-tick">✓</span>}

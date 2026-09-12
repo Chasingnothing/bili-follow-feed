@@ -78,6 +78,15 @@ html.bff-active body {
   font-size: 12px;
   opacity: 0.6;
 }
+.bff-hidden-hint {
+  margin-left: 6px;
+  opacity: 0.85;
+  cursor: help;
+}
+/* 「隐藏」是系统分组，用不同的边框色和普通分组区分开 */
+.bff-folder.is-hidden-group {
+  border-color: #6b4a5a;
+}
 .bff-back {
   font-size: 13px;
   color: #9499a0;

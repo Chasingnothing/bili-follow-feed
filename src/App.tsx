@@ -11,6 +11,7 @@ import {
   createGroup,
   deleteGroup,
   detectDivergence,
+  getHiddenMids,
   loadGroups,
   loadMembership,
   mergeImport,
@@ -26,6 +27,7 @@ import {
   type Group,
 } from './lib/localGroups';
 import { buildSections } from './lib/grouping';
+import { HIDDEN_ID } from './lib/upIndex';
 import {
   loadRead,
   saveRead,
@@ -144,23 +146,43 @@ export default function App() {
     [sort],
   );
 
-  const sortedAll = useMemo(() => [...feed.cards].sort(collator), [feed.cards, collator]);
+  /** 处于「隐藏」的 UP —— **不取关**，只是把他的视频从页面滤掉 */
+  const hiddenMids = useMemo(() => getHiddenMids(), [membership, dataVersion]);
+
+  const sortedAll = useMemo(
+    () =>
+      feed.cards
+        .filter((c) => !hiddenMids.has(c.upMid))
+        .sort(collator),
+    [feed.cards, hiddenMids, collator],
+  );
+
+  const hiddenCount = useMemo(
+    () => feed.cards.filter((c) => hiddenMids.has(c.upMid)).length,
+    [feed.cards, hiddenMids],
+  );
   const visibleFlat = useMemo(
     () => (filter === 'unread' ? sortedAll.filter((c) => !readSet.has(c.bvid)) : sortedAll),
     [sortedAll, filter, readSet],
   );
 
+  /** 主区不渲染「隐藏」板块 —— 它只是管理入口，其内容已被过滤掉 */
+  const sectionGroups = useMemo(() => groups.filter((g) => g.id !== HIDDEN_ID), [groups]);
+
   const sections = useMemo(
-    () => buildSections(visibleFlat, groups, membership),
-    [visibleFlat, groups, membership],
+    () => buildSections(visibleFlat, sectionGroups, membership),
+    [visibleFlat, sectionGroups, membership],
   );
   // 未经过滤的分区，用来告诉用户「这个板块被筛选掉了多少」
   const sectionTotals = useMemo(
     () =>
       new Map(
-        buildSections(sortedAll, groups, membership).map((s) => [s.group.id, s.videos.length]),
+        buildSections(sortedAll, sectionGroups, membership).map((s) => [
+          s.group.id,
+          s.videos.length,
+        ]),
       ),
-    [sortedAll, groups, membership],
+    [sortedAll, sectionGroups, membership],
   );
 
   // ── 空板块默认折叠（只在首次拿到分区时做一次）─────────────────────────
@@ -508,6 +530,11 @@ export default function App() {
 
           <span className="bff-count">
             {visibleFlat.length} / {feed.cards.length}
+            {hiddenCount > 0 && (
+              <span className="bff-hidden-hint" title="这些 UP 在「隐藏」分组里，视频已被过滤">
+                （已隐藏 {hiddenCount} 条）
+              </span>
+            )}
           </span>
 
           <a className="bff-back" href={BILIBILI_HOME}>

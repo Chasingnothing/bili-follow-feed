@@ -1,6 +1,6 @@
 import type { BiliTag, TrimmedFollowedUp } from '../types';
 import { readJson, writeJson } from './storage';
-import { SPECIAL_ID, UNCATEGORIZED_ID, biliGroupIdsOf } from './upIndex';
+import { SPECIAL_ID, UNCATEGORIZED_ID, HIDDEN_ID, biliGroupIdsOf } from './upIndex';
 
 export interface Group {
   id: string;
@@ -39,7 +39,11 @@ export const MAX_GROUP_NAME = 16;
  */
 const ORDER_SPECIAL = 0;
 const ORDER_CUSTOM_START = 10;
-const ORDER_UNCATEGORIZED = 9999;
+/** 系统分组从这个 order 起排在末尾；自定义分组不会插到它们之后 */
+const ORDER_SYSTEM_FROM = 9980;
+const ORDER_UNCATEGORIZED = 9980;
+/** 「隐藏」排在最末 —— 它是"不想看的东西"的收纳处 */
+const ORDER_HIDDEN = 9990;
 
 const BILI_SPECIAL_TAGID = -10;
 const BILI_DEFAULT_TAGID = 0;
@@ -54,6 +58,7 @@ function systemGroups(): Group[] {
       kind: 'system',
       source: 'bilibili',
     },
+    { id: HIDDEN_ID, name: '隐藏', order: ORDER_HIDDEN, kind: 'system', source: 'local' },
   ];
 }
 
@@ -90,6 +95,21 @@ function loadSnapshot(): Snapshot {
 export function groupsOf(membership: Membership, mid: number): string[] {
   const g = membership[String(mid)];
   return Array.isArray(g) ? g : [];
+}
+
+/**
+ * 处于「隐藏」的 UP。
+ *
+ * 隐藏**不取关** —— 只是在渲染前把他们的视频滤掉。所以这里只读 membership，
+ * 完全不碰 B站 账号。
+ */
+export function getHiddenMids(): Set<number> {
+  const m = loadMembership();
+  const out = new Set<number>();
+  for (const [mid, gids] of Object.entries(m)) {
+    if (Array.isArray(gids) && gids.includes(HIDDEN_ID)) out.add(Number(mid));
+  }
+  return out;
 }
 
 // ── 写入（全部经过 writeJson，会返回是否成功） ────────────────────────────
@@ -202,7 +222,7 @@ export function seedFromBilibili(tags: BiliTag[], followings: TrimmedFollowedUp[
 function ensureGroupsForTags(groups: Group[], tags: BiliTag[]): { adopted: string[] } {
   const adopted: string[] = [];
   let maxOrder = groups.reduce(
-    (acc, g) => (g.order < ORDER_UNCATEGORIZED ? Math.max(acc, g.order) : acc),
+    (acc, g) => (g.order < ORDER_SYSTEM_FROM ? Math.max(acc, g.order) : acc),
     ORDER_CUSTOM_START - 1,
   );
 
@@ -292,7 +312,7 @@ export function createGroup(name: string): Group | null {
     if (m) maxLocal = Math.max(maxLocal, Number(m[1]));
   }
   const maxOrder = groups.reduce(
-    (acc, g) => (g.order < ORDER_UNCATEGORIZED ? Math.max(acc, g.order) : acc),
+    (acc, g) => (g.order < ORDER_SYSTEM_FROM ? Math.max(acc, g.order) : acc),
     ORDER_CUSTOM_START - 1,
   );
 
@@ -389,7 +409,12 @@ export function applyBatch(mids: number[], op: BatchOp): boolean {
     const key = String(mid);
     switch (op.type) {
       case 'add': {
-        const cur = membership[key] ?? [];
+        // 加入「隐藏」= 互斥替换；加入普通分组 = 追加，并顺带取消隐藏
+        if (op.groupId === HIDDEN_ID) {
+          setMembership(membership, mid, [HIDDEN_ID]);
+          break;
+        }
+        const cur = (membership[key] ?? []).filter((x) => x !== HIDDEN_ID);
         setMembership(membership, mid, cur.includes(op.groupId) ? cur : [...cur, op.groupId]);
         break;
       }

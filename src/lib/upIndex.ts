@@ -2,6 +2,13 @@ import type { TrimmedFollowedUp, UpInfo } from '../types';
 
 export const SPECIAL_ID = 'special';
 export const UNCATEGORIZED_ID = 'uncategorized';
+/**
+ * 「隐藏」是本地系统分组，**与所有其他分组互斥**。
+ *
+ * 它不取关，只是把这个 UP 的视频从页面上过滤掉。互斥是必须的：若一个 UP
+ * 同时在「隐藏」和「游戏」里，他的视频仍会出现在「游戏」板块，等于没隐藏。
+ */
+export const HIDDEN_ID = 'hidden';
 
 /** B站 特别关注分组的恒定 tagid */
 const BILI_SPECIAL_TAGID = -10;

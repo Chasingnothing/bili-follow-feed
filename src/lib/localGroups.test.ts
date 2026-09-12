@@ -18,10 +18,11 @@ import {
   pruneStale,
   groupsOf,
   isSeeded,
+  getHiddenMids,
   MAX_GROUP_NAME,
   type Group,
 } from './localGroups';
-import { SPECIAL_ID, UNCATEGORIZED_ID } from './upIndex';
+import { SPECIAL_ID, UNCATEGORIZED_ID, HIDDEN_ID } from './upIndex';
 import { rawTags } from '../data/__fixtures__/relation';
 import type { BiliTag, TrimmedFollowedUp } from '../types';
 
@@ -76,14 +77,15 @@ describe('seedFromBilibili', () => {
 });
 
 describe('分组顺序', () => {
-  it('special 最前、uncategorized 最后（不沿用 B站 API 顺序）', () => {
+  it('special 最前，未分类与隐藏在末尾（不沿用 B站 API 顺序）', () => {
     seedFromBilibili(rawTags, [up(1, null)]);
     const sorted = loadGroups().sort((a, b) => a.order - b.order);
     expect(sorted[0].id).toBe(SPECIAL_ID);
-    expect(sorted[sorted.length - 1].id).toBe(UNCATEGORIZED_ID);
+    expect(sorted[sorted.length - 2].id).toBe(UNCATEGORIZED_ID);
+    expect(sorted[sorted.length - 1].id).toBe(HIDDEN_ID);
   });
 
-  it('即使 B站 把默认分组排在第 2，未分类仍在最后', () => {
+  it('即使 B站 把默认分组排在第 2，系统分组仍在末尾', () => {
     // rawTags 的真实顺序是 -10, 0, 194110, 207542
     expect(rawTags[1].tagid).toBe(0);
     seedFromBilibili(rawTags, [up(1, null)]);
@@ -93,6 +95,7 @@ describe('分组顺序', () => {
       'bili-194110',
       'bili-207542',
       UNCATEGORIZED_ID,
+      HIDDEN_ID,
     ]);
   });
 });
@@ -522,12 +525,87 @@ describe('补充导入时的同名分组复用', () => {
   });
 });
 
+// ── 隐藏分组 ────────────────────────────────────────────────────────────
+
+describe('隐藏分组', () => {
+  beforeEach(() => {
+    seedFromBilibili(rawTags, [up(1, [207542]), up(2, [207542]), up(3, null)]);
+  });
+
+  it('系统分组默认包含「隐藏」', () => {
+    expect(loadGroups().map((g) => g.id)).toContain(HIDDEN_ID);
+  });
+
+  it('「隐藏」排在最后', () => {
+    const sorted = loadGroups().sort((a, b) => a.order - b.order);
+    expect(sorted[sorted.length - 1].id).toBe(HIDDEN_ID);
+  });
+
+  it('加入隐藏后只属于隐藏，与其他分组互斥', () => {
+    applyBatch([1], { type: 'add', groupId: HIDDEN_ID });
+    expect(loadMembership()['1']).toEqual([HIDDEN_ID]);
+  });
+
+  it('互斥的原因：若同时留在普通分组，视频仍会在那个板块出现', () => {
+    // 先确保他在电影分组
+    expect(loadMembership()['1']).toEqual(['bili-207542']);
+    applyBatch([1], { type: 'add', groupId: HIDDEN_ID });
+    expect(loadMembership()['1']).not.toContain('bili-207542');
+  });
+
+  it('再加入普通分组即取消隐藏', () => {
+    applyBatch([1], { type: 'add', groupId: HIDDEN_ID });
+    applyBatch([1], { type: 'add', groupId: 'bili-194110' });
+    expect(loadMembership()['1']).toEqual(['bili-194110']);
+  });
+
+  it('移出隐藏即回到未分类', () => {
+    applyBatch([1], { type: 'add', groupId: HIDDEN_ID });
+    applyBatch([1], { type: 'remove', groupId: HIDDEN_ID });
+    expect(loadMembership()['1']).toBeUndefined();
+  });
+
+  it('clear 也能取消隐藏', () => {
+    applyBatch([1], { type: 'add', groupId: HIDDEN_ID });
+    applyBatch([1], { type: 'clear' });
+    expect(loadMembership()['1']).toBeUndefined();
+  });
+
+  it('getHiddenMids 只返回处于隐藏的 UP', () => {
+    applyBatch([1, 3], { type: 'add', groupId: HIDDEN_ID });
+    const hidden = getHiddenMids();
+    expect([...hidden].sort()).toEqual([1, 3]);
+    expect(hidden.has(2)).toBe(false);
+  });
+
+  it('隐藏经过「补充导入」不会被冲掉', () => {
+    applyBatch([1], { type: 'add', groupId: HIDDEN_ID });
+    mergeImport(rawTags, [up(1, [207542]), up(2, [207542]), up(3, null)]);
+    expect(loadMembership()['1']).toEqual([HIDDEN_ID]);
+  });
+
+  it('隐藏不会被重置到 B站 分组（resetFromBilibili 是有意覆盖，此处只验证不被隐式清除）', () => {
+    applyBatch([3], { type: 'add', groupId: HIDDEN_ID });
+    // up3 在 B站 侧是未分类；补充导入不该动已分类（隐藏）的他
+    mergeImport(rawTags, [up(3, null)]);
+    expect(loadMembership()['3']).toEqual([HIDDEN_ID]);
+  });
+
+  it('隐藏是本地状态，不影响 B站 侧数据', () => {
+    // getHiddenMids 只读 membership，不产生任何写接口调用
+    applyBatch([1], { type: 'add', groupId: HIDDEN_ID });
+    expect(loadMembership()['1']).toEqual([HIDDEN_ID]);
+  });
+});
+
 // ── 读取容错 ────────────────────────────────────────────────────────────
 
 describe('读取容错', () => {
   it('从未初始化时返回系统分组默认值', () => {
     const groups: Group[] = loadGroups();
-    expect(groups.map((g) => g.id).sort()).toEqual([SPECIAL_ID, UNCATEGORIZED_ID].sort());
+    expect(groups.map((g) => g.id).sort()).toEqual(
+      [SPECIAL_ID, UNCATEGORIZED_ID, HIDDEN_ID].sort(),
+    );
   });
 
   it('membership 损坏时返回空对象', () => {

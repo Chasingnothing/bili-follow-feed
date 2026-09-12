@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Group } from '../lib/localGroups';
 import { MAX_GROUP_NAME } from '../lib/localGroups';
+import { HIDDEN_ID } from '../lib/upIndex';
 
 interface Props {
   upName: string;
@@ -70,9 +71,20 @@ export default function GroupPicker({
 
       <div className="bff-picker-list">
         {ordered.map((g) => (
-          <label className="bff-picker-item" key={g.id}>
+          <label
+            className="bff-picker-item"
+            key={g.id}
+            title={
+              g.id === HIDDEN_ID
+                ? '隐藏他的视频：不取关，但不再出现在页面上（会移出其他分组）'
+                : undefined
+            }
+          >
             <input type="checkbox" checked={current.includes(g.id)} onChange={() => onToggle(g.id)} />
-            <span className="bff-picker-name">{g.name}</span>
+            <span className="bff-picker-name">
+              {g.id === HIDDEN_ID ? '🙈 ' : ''}
+              {g.name}
+            </span>
           </label>
         ))}
       </div>

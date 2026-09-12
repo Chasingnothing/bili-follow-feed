@@ -394,3 +394,185 @@ html.bff-active body {
 .bff-side-link:hover {
   color: #fb7299;
 }
+
+/* ── 分组板块 ─────────────────────────────────────────────────────────── */
+
+.bff-section {
+  margin-bottom: 4px;
+}
+.bff-section-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  background: #1f2023;
+  border: none;
+  border-bottom: 1px solid #2b2c2f;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font-size: 14px;
+  font-family: inherit;
+}
+.bff-section-head:hover {
+  background: #232427;
+}
+.bff-section-name {
+  font-weight: 600;
+}
+.bff-section-count {
+  font-size: 12px;
+  color: #9499a0;
+}
+.bff-section-hidden {
+  margin-left: 6px;
+  opacity: 0.75;
+}
+.bff-section-empty {
+  padding: 18px 24px 26px;
+  color: #6a6d73;
+  font-size: 13px;
+}
+
+/* ── 分组勾选菜单 ─────────────────────────────────────────────────────── */
+
+.bff-picker {
+  position: fixed;
+  z-index: 2147483600;
+  background: #232427;
+  border: 1px solid #3a3b3e;
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  font-size: 13px;
+  overflow: hidden;
+}
+.bff-picker-head {
+  padding: 8px 10px;
+  border-bottom: 1px solid #3a3b3e;
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.bff-picker-diverge {
+  color: #fb7299;
+  font-size: 11px;
+  font-weight: 400;
+}
+.bff-picker-list {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.bff-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.bff-picker-item:hover {
+  background: #2b2c2f;
+}
+.bff-picker-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bff-picker-foot {
+  border-top: 1px solid #3a3b3e;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bff-picker-foot button {
+  background: none;
+  border: none;
+  color: #c9ccd1;
+  text-align: left;
+  padding: 5px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+}
+.bff-picker-foot button:hover {
+  background: #2b2c2f;
+  color: #fb7299;
+}
+.bff-picker-create {
+  display: flex;
+  gap: 4px;
+}
+.bff-picker-create input {
+  flex: 1;
+  min-width: 0;
+  background: #18191c;
+  color: #e3e5e7;
+  border: 1px solid #3a3b3e;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+.bff-picker-create button {
+  flex: none;
+  padding: 4px 10px;
+}
+
+/* ── 批量操作条 ───────────────────────────────────────────────────────── */
+
+.bff-batch {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 16px;
+  z-index: 2147483500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #232427;
+  border: 1px solid #3a3b3e;
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+  font-size: 13px;
+  max-width: calc(100vw - 32px);
+  flex-wrap: wrap;
+}
+.bff-batch-count {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.bff-batch select,
+.bff-batch button {
+  background: #2b2c2f;
+  color: #e3e5e7;
+  border: 1px solid #3a3b3e;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.bff-batch select:disabled,
+.bff-batch button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.bff-batch-undo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #fb7299;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.bff-batch-undo button {
+  color: #fb7299;
+  border-color: #fb7299;
+}
+.bff-batch-exit {
+  margin-left: auto;
+}

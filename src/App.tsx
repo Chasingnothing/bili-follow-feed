@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { VideoCard } from './types';
 import { useFeed } from './hooks/useFeed';
 import { WINDOW_OPTIONS } from './lib/feedWindow';
+import { useScrollToTopOnPage } from './hooks/useScrollToTopOnPage';
 import { useFollowings } from './hooks/useFollowings';
 import {
   acknowledgeDivergence,
@@ -89,6 +90,8 @@ export default function App() {
 
   const lastVisit = useRef(loadLastVisit()).current;
   const collapseSeeded = useRef(false);
+  /** 平铺视图翻页后也要滚回顶部 */
+  const flatScroll = useScrollToTopOnPage<HTMLDivElement>();
 
   const refreshLocal = useCallback(() => {
     setGroups(loadGroups());
@@ -477,14 +480,19 @@ export default function App() {
         {feed.error && <div className="bff-empty">接口出错：{feed.error}</div>}
 
         {!feed.error && view === 'flat' && (
-          <VideoGrid
-            cards={visibleFlat}
-            readSet={readSet}
-            lastVisit={lastVisit}
-            onOpen={onOpen}
-            page={pages[FLAT_KEY] ?? 1}
-            onPageChange={(p) => setPage(FLAT_KEY, p)}
-          />
+          <div ref={flatScroll.ref}>
+            <VideoGrid
+              cards={visibleFlat}
+              readSet={readSet}
+              lastVisit={lastVisit}
+              onOpen={onOpen}
+              page={pages[FLAT_KEY] ?? 1}
+              onPageChange={(p) => {
+                setPage(FLAT_KEY, p);
+                flatScroll.bump();
+              }}
+            />
+          </div>
         )}
 
         {!feed.error &&

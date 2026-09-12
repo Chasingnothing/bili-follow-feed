@@ -1,5 +1,6 @@
 import type { VideoCard } from '../types';
 import type { Group } from '../lib/localGroups';
+import { useScrollToTopOnPage } from '../hooks/useScrollToTopOnPage';
 import VideoGrid from './VideoGrid';
 
 interface Props {
@@ -37,9 +38,11 @@ export default function GroupSection({
   onPageChange,
 }: Props) {
   const filteredOut = videoCountBeforeFilter - videos.length;
+  // 翻页后把本板块滚回顶部 —— 否则页数少的那一页会让板块变矮、视野跳到下一个板块
+  const { ref, bump } = useScrollToTopOnPage<HTMLElement>();
 
   return (
-    <section className="bff-section">
+    <section className="bff-section" ref={ref}>
       <button
         type="button"
         className="bff-section-head"
@@ -66,7 +69,10 @@ export default function GroupSection({
             readSet={readSet}
             lastVisit={lastVisit}
             page={page}
-            onPageChange={onPageChange}
+            onPageChange={(p) => {
+              onPageChange(p);
+              bump();
+            }}
             onOpen={onOpen}
           />
         ))}

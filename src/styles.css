@@ -201,13 +201,15 @@ html.bff-active body {
   z-index: 2147483400;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+  gap: 8px;
+  padding: 8px 10px;
   background: #232427;
-  border: 1px solid #3a3b3e;
+  border: 1px solid #5a5b62;
   border-radius: 10px;
-  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
-  font-size: 12px;
+  box-shadow:
+    0 6px 22px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(251, 114, 153, 0.18);
+  font-size: 13px;
   user-select: none;
 }
 .bff-loadmore.is-dragging {
@@ -237,21 +239,23 @@ html.bff-active body {
 }
 .bff-loadmore-go,
 .bff-loadmore-caret {
-  background: #2b2c2f;
-  color: #e3e5e7;
-  border: 1px solid #3a3b3e;
+  background: #fb7299;
+  color: #fff;
+  border: 1px solid #fb7299;
   border-radius: 6px;
-  padding: 5px 10px;
-  font-size: 12px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
   font-family: inherit;
 }
 .bff-loadmore-caret {
-  padding: 5px 8px;
+  padding: 7px 9px;
 }
 .bff-loadmore-go:hover:not(:disabled),
 .bff-loadmore-caret:hover:not(:disabled) {
-  background: #35363a;
+  background: #ff8aab;
+  border-color: #ff8aab;
 }
 .bff-loadmore-go:disabled,
 .bff-loadmore-caret:disabled {
@@ -481,6 +485,8 @@ html.bff-active body {
 
 .bff-section {
   margin-bottom: 4px;
+  /* 翻页后滚回板块顶部时，给吸顶工具条留出空间，别把标题顶到它下面 */
+  scroll-margin-top: 60px;
 }
 .bff-section-head {
   width: 100%;
@@ -879,29 +885,62 @@ html.bff-active body {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 4px 24px 20px;
+  padding: 6px 24px 22px;
   flex-wrap: wrap;
 }
+/* 左右两翼等宽，页码自然落在正中 —— 它是最常点的东西，不该靠右 */
 .bff-pager-range {
+  flex: 1 1 0;
+  min-width: 138px;
   font-size: 12px;
   color: #9499a0;
 }
 .bff-pager-tabs {
+  flex: 0 0 auto;
   display: flex;
   gap: 4px;
   align-items: center;
-  margin-left: auto;
-  flex-wrap: wrap;
 }
-.bff-pager-tabs button {
-  min-width: 30px;
-  height: 28px;
-  padding: 0 8px;
+.bff-pager-jump {
+  flex: 1 1 0;
+  min-width: 132px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  font-size: 12px;
+  color: #9499a0;
+}
+.bff-pager-jump input {
+  width: 58px;
   background: #2b2c2f;
   color: #e3e5e7;
   border: 1px solid #3a3b3e;
   border-radius: 6px;
+  padding: 5px 6px;
   font-size: 12px;
+  font-family: inherit;
+  text-align: center;
+}
+/* 去掉数字输入框的上下箭头，宽度才稳定 */
+.bff-pager-jump input::-webkit-outer-spin-button,
+.bff-pager-jump input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.bff-pager-jump input:focus {
+  outline: none;
+  border-color: #fb7299;
+}
+.bff-pager-tabs button {
+  min-width: 34px;
+  height: 30px;
+  padding: 0 9px;
+  background: #2b2c2f;
+  color: #e3e5e7;
+  border: 1px solid #3a3b3e;
+  border-radius: 6px;
+  font-size: 13px;
   cursor: pointer;
   font-family: inherit;
 }

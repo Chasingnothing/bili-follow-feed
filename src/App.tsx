@@ -45,6 +45,7 @@ import Sidebar from './components/Sidebar';
 import GroupPicker from './components/GroupPicker';
 import GroupMenu from './components/GroupMenu';
 import BatchBar from './components/BatchBar';
+import LoadMoreBar from './components/LoadMoreBar';
 import { BILIBILI_HOME } from './lib/route';
 import './styles.css';
 
@@ -504,14 +505,16 @@ export default function App() {
             />
           ))}
 
-        {!feed.error && feed.hasMore && (
-          <div className="bff-more">
-            <button type="button" onClick={feed.loadMore} disabled={feed.loading}>
-              {feed.loading ? '加载中…' : '加载更多'}
-            </button>
-          </div>
-        )}
       </main>
+
+      <LoadMoreBar
+        loaded={feed.cards.length}
+        hasMore={feed.hasMore}
+        busy={feed.loading || feed.filling || feed.loadingMore}
+        progress={feed.moreProgress}
+        raised={batchActive}
+        onLoad={feed.loadMore}
+      />
 
       {batchActive && (
         <BatchBar

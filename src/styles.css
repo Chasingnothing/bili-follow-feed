@@ -192,23 +192,46 @@ html.bff-active body {
   text-align: center;
   color: #9499a0;
 }
-.bff-more {
-  text-align: center;
-  padding: 0 24px 48px;
+/* ── 右下角悬浮「加载更多」 ───────────────────────────────────────────── */
+
+.bff-loadmore {
+  position: fixed;
+  right: 20px;
+  bottom: 18px;
+  z-index: 2147483400;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #232427;
+  border: 1px solid #3a3b3e;
+  border-radius: 10px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
+  font-size: 12px;
 }
-.bff-more button {
+/* 批量操作条在底部居中，悬浮条上移让位 */
+.bff-loadmore--raised {
+  bottom: 76px;
+}
+.bff-loadmore-count {
+  color: #9499a0;
+  white-space: nowrap;
+}
+.bff-loadmore-progress {
+  color: #4fc3f7;
+  white-space: nowrap;
+}
+.bff-loadmore select {
   background: #2b2c2f;
   color: #e3e5e7;
   border: 1px solid #3a3b3e;
   border-radius: 6px;
-  padding: 8px 24px;
-  font-size: 13px;
+  padding: 5px 8px;
+  font-size: 12px;
   cursor: pointer;
+  font-family: inherit;
 }
-.bff-more button:hover:not(:disabled) {
-  background: #35363a;
-}
-.bff-more button:disabled {
+.bff-loadmore select:disabled {
   opacity: 0.5;
   cursor: default;
 }

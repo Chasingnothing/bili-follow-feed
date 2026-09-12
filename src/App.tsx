@@ -285,6 +285,9 @@ export default function App() {
       refreshLocal();
       setCanUndo(canUndoBatch());
       setLastAction(`已应用到 ${n} 个 UP`);
+      // 操作已应用 → 立即清空选择。否则下一次操作会把**同一批人**又加进
+      // 另一个分组（用户以为已经换了一批，实际没有）。
+      setSelected(new Set());
       if (!ok) setStorageWarning(true);
     },
     [selected, refreshLocal],
@@ -578,6 +581,7 @@ export default function App() {
               readSet={readSet}
               lastVisit={lastVisit}
               onOpen={onOpen}
+              onPick={pickFor}
               page={pages[FLAT_KEY] ?? 1}
               onPageChange={(p) => {
                 setPage(FLAT_KEY, p);
@@ -603,6 +607,7 @@ export default function App() {
               onToggle={toggleSection}
               onOpen={onOpen}
               onPageChange={(p) => setPage(s.group.id, p)}
+              onPick={pickFor}
             />
           ))}
 

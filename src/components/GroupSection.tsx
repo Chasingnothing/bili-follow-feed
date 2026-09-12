@@ -30,6 +30,8 @@ interface Props {
   onToggle: (groupId: string) => void;
   onOpen: (card: VideoCard) => void;
   onPageChange: (page: number) => void;
+  /** 打开某个 UP 的分组菜单 */
+  onPick: (upMid: number, el: HTMLElement) => void;
 }
 
 /**
@@ -53,6 +55,7 @@ export default function GroupSection({
   onToggle,
   onOpen,
   onPageChange,
+  onPick,
 }: Props) {
   const filteredOut = videoCountBeforeFilter - videos.length;
   // 翻页后把本板块滚回顶部 —— 否则页数少的那一页会让板块变矮、视野跳到下一个板块
@@ -161,6 +164,7 @@ export default function GroupSection({
               bump();
             }}
             onOpen={onOpen}
+            onPick={onPick}
           />
         ))}
     </section>

@@ -185,6 +185,8 @@ html.bff-active body {
   display: flex;
   align-items: center;
   gap: 6px;
+  /* flex:1 让右侧的「⋯」被推到行尾 */
+  flex: 1;
   min-width: 0;
   text-decoration: none;
   color: inherit;

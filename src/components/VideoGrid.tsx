@@ -8,6 +8,8 @@ interface Props {
   readSet: Set<string>;
   lastVisit: number;
   onOpen: (card: Card) => void;
+  /** 打开某个 UP 的分组菜单 */
+  onPick: (upMid: number, el: HTMLElement) => void;
   /** 当前页码，1-based */
   page: number;
   onPageChange: (page: number) => void;
@@ -24,6 +26,7 @@ export default function VideoGrid({
   readSet,
   lastVisit,
   onOpen,
+  onPick,
   page,
   onPageChange,
 }: Props) {
@@ -44,6 +47,7 @@ export default function VideoGrid({
             read={readSet.has(c.bvid)}
             isNew={c.pubdate * 1000 > lastVisit}
             onOpen={onOpen}
+            onPick={onPick}
           />
         ))}
       </div>

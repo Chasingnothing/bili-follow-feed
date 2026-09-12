@@ -7,6 +7,8 @@ interface Props {
   read: boolean;
   isNew: boolean;
   onOpen: (card: Card) => void;
+  /** 打开该 UP 的分组菜单 */
+  onPick: (upMid: number, el: HTMLElement) => void;
 }
 
 /**
@@ -14,8 +16,11 @@ interface Props {
  *
  * 不能把 UP 链接套在视频链接里面 —— `<a>` 嵌 `<a>` 是非法 HTML，浏览器会把
  * 内层拆掉，表现为点头像不跳转或跳错地方。所以外层是 `<div>`，两个 `<a>` 平级。
+ *
+ * 同理，「⋯」按钮也**不能**放进 UP 那个 `<a>` 里：带 href 的 `<a>` 不允许包含
+ * 交互内容（button 等），是同一类非法嵌套。
  */
-export default function VideoCard({ card, read, isNew, onOpen }: Props) {
+export default function VideoCard({ card, read, isNew, onOpen, onPick }: Props) {
   return (
     <div className={`bff-card${read ? ' bff-card--read' : ''}`}>
       <a
@@ -52,6 +57,15 @@ export default function VideoCard({ card, read, isNew, onOpen }: Props) {
           <img className="bff-face" src={card.upFace} alt="" referrerPolicy="no-referrer" />
           <span className="bff-up">{card.upName}</span>
         </a>
+
+        <button
+          type="button"
+          className="bff-up-more"
+          onClick={(e) => onPick(card.upMid, e.currentTarget)}
+          title={`调整「${card.upName}」的分组`}
+        >
+          ⋯
+        </button>
       </div>
 
       <div className="bff-sub">

@@ -62,6 +62,13 @@ export function loadGroups(): Group[] {
   return stored;
 }
 
+/** 是否已经做过首次导入。
+ *  注意不能用 `loadGroups().length === 0` 判断 —— 那个函数在从未初始化时会
+ *  回落出两个系统分组的默认值，永远不为空。 */
+export function isSeeded(): boolean {
+  return readJson<unknown>(GROUPS_KEY, null) !== null;
+}
+
 export function loadMembership(): Membership {
   const m = readJson<Membership>(MEMBERSHIP_KEY, {});
   return m && typeof m === 'object' ? m : {};

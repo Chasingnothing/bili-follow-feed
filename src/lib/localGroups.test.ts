@@ -14,6 +14,7 @@ import {
   resetFromBilibili,
   pruneStale,
   groupsOf,
+  isSeeded,
   MAX_GROUP_NAME,
   type Group,
 } from './localGroups';
@@ -365,5 +366,16 @@ describe('读取容错', () => {
   it('groups 损坏时回落系统分组', () => {
     localStorage.setItem('bff:groups', '{"a":1}');
     expect(loadGroups().map((g) => g.id)).toContain(SPECIAL_ID);
+  });
+
+  it('isSeeded 初始为 false，且不能用 loadGroups().length 判断', () => {
+    expect(isSeeded()).toBe(false);
+    // loadGroups 在从未初始化时会回落出系统分组，所以它永远不为空
+    expect(loadGroups().length).toBeGreaterThan(0);
+  });
+
+  it('首次导入后 isSeeded 为 true', () => {
+    seedFromBilibili(rawTags, [up(1, null)]);
+    expect(isSeeded()).toBe(true);
   });
 });

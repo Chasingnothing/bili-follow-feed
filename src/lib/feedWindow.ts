@@ -1,4 +1,4 @@
-import type { FeedPage } from '../types';
+import type { FeedPage, VideoCard } from '../types';
 
 export interface FillResult {
   pages: number;
@@ -69,4 +69,65 @@ export const WINDOW_OPTIONS: Array<{ hours: number; label: string }> = [
 
 export function cutoffFor(hours: number, nowMs: number = Date.now()): number {
   return Math.floor(nowMs / 1000) - hours * 3600;
+}
+
+export interface IncrementalResult {
+  /** 新增的条目（按动态流顺序，越靠前越新） */
+  fresh: VideoCard[];
+  /** 是否追上了已知内容（false = 离线太久，调用方应退回完整加载） */
+  caughtUp: boolean;
+  pages: number;
+}
+
+export interface IncrementalOptions {
+  fetchPage: (offset: string | null) => Promise<FeedPage>;
+  /** 本地已有的 bvid */
+  known: Set<string>;
+  maxPages: number;
+  onPage?: (fresh: VideoCard[], index: number) => void;
+  delayMs: number;
+  sleep: (ms: number) => Promise<void>;
+}
+
+/**
+ * 增量刷新：从顶部往下抓新增内容，**撞见已知条目即停**。
+ *
+ * 动态流是倒序的，所以某页一旦出现已知条目，再往下只会更旧、也必然已知 ——
+ * 可以立刻停，不必一路翻到时间窗边界。这是「刷新页面不重拉 10 页」的关键。
+ *
+ * 追满 maxPages 仍未撞见已知条目时 `caughtUp: false`：说明离线期间新增量超过
+ * 了上限，此时缓存与新增之间**存在断层**，调用方必须退回完整加载，
+ * 不能把两段直接拼接。
+ */
+export async function fetchNewer(opts: IncrementalOptions): Promise<IncrementalResult> {
+  const { fetchPage, known, maxPages, onPage, delayMs, sleep } = opts;
+
+  const fresh: VideoCard[] = [];
+  let offset: string | null = null;
+  let caughtUp = false;
+  let pages = 0;
+
+  while (pages < maxPages) {
+    const page = await fetchPage(offset);
+    pages++;
+
+    const newOnes = page.items.filter((c) => !known.has(c.bvid));
+    fresh.push(...newOnes);
+    onPage?.(newOnes, pages);
+
+    // 这页出现了已知条目 → 已追上缓存内容
+    if (newOnes.length < page.items.length) {
+      caughtUp = true;
+      break;
+    }
+    if (!page.hasMore || !page.nextOffset || page.oldestPubTs === 0) {
+      caughtUp = true;
+      break;
+    }
+
+    offset = page.nextOffset;
+    if (pages < maxPages) await sleep(delayMs);
+  }
+
+  return { fresh, caughtUp, pages };
 }

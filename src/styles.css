@@ -232,6 +232,10 @@ html.bff-active body {
   background: #2b2c2f;
   color: #c9ccd1;
 }
+.bff-loadmore-checking {
+  color: #4fc3f7;
+  margin-left: 4px;
+}
 .bff-loadmore-progress {
   color: #4fc3f7;
   white-space: nowrap;

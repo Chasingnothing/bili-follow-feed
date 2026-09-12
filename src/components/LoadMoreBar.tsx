@@ -17,6 +17,8 @@ interface Props {
   hasMore: boolean;
   busy: boolean;
   progress: MoreProgress | null;
+  /** 后台增量刷新中（内容已在显示，只是在检查有没有新的） */
+  refreshing: boolean;
   /** 批量操作条出现时，默认位置上移让位 */
   raised: boolean;
   onLoad: (pages: number) => void;
@@ -42,7 +44,15 @@ function clampPos(p: Pos, w: number, h: number): Pos {
  *   「加载更多」       = 直接加载 1 页
  *   「▾」             = 展开页数选择
  */
-export default function LoadMoreBar({ loaded, hasMore, busy, progress, raised, onLoad }: Props) {
+export default function LoadMoreBar({
+  loaded,
+  hasMore,
+  busy,
+  progress,
+  refreshing,
+  raised,
+  onLoad,
+}: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<Pos | null>(() => readJson<Pos | null>(POS_KEY, null));
   const [menuOpen, setMenuOpen] = useState(false);
@@ -152,6 +162,7 @@ export default function LoadMoreBar({ loaded, hasMore, busy, progress, raised, o
         title="按住拖动位置 · 双击复位到右下角"
       >
         ⠿ 已加载 {loaded} 条
+        {refreshing && <span className="bff-loadmore-checking">· 检查更新中…</span>}
       </span>
 
       {progress ? (

@@ -520,6 +520,7 @@ export default function App() {
         hasMore={feed.hasMore}
         busy={feed.loading || feed.filling || feed.loadingMore}
         progress={feed.moreProgress}
+        refreshing={feed.refreshing}
         raised={batchActive}
         onLoad={feed.loadMore}
       />

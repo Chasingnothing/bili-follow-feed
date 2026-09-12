@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FeedPage, VideoCard } from '../types';
 import { InPageDataSource } from '../data/inPage';
-import { cutoffFor, fillToCutoff } from '../lib/feedWindow';
+import { cutoffFor, fetchNewer, fillToCutoff } from '../lib/feedWindow';
 import { readJson, writeJson } from '../lib/storage';
 
 /** 页与页之间的等待：探针实测 30 页 / 400ms 可稳定跑完 */
 const PAGE_DELAY_MS = 400;
-/** 自动补齐的翻页上限。实测 30 页≈3 天，40 页留余量 */
+/** 完整加载时的翻页上限。实测 30 页≈3 天，40 页留余量 */
 const MAX_FILL_PAGES = 40;
+/** 增量刷新时最多往下追几页；追不上说明离线太久，退回完整加载 */
+const MAX_INCREMENTAL_PAGES = 15;
+/** 距上次写入多久之内连增量刷新都跳过（防抖，避免连续刷新打接口） */
+const FRESH_MS = 60 * 1000;
+
 const CACHE_KEY = 'bff:feedCache';
-const CACHE_TTL_MS = 10 * 60 * 1000;
-const MAX_CACHED_CARDS = 400;
+/** 缓存里最多留多少张卡片 */
+const MAX_CACHED_CARDS = 600;
 
 export interface MoreProgress {
   done: number;
@@ -20,18 +25,18 @@ export interface MoreProgress {
 export interface FeedApi {
   cards: VideoCard[];
   hasMore: boolean;
-  /** 首屏加载中 */
+  /** 首屏加载中（无缓存可用时才会出现） */
   loading: boolean;
-  /** 后台自动补齐时间窗中 */
+  /** 后台补齐时间窗中 */
   filling: boolean;
+  /** 后台增量刷新中（已经在显示缓存内容） */
+  refreshing: boolean;
   filledPages: number;
   covered: boolean;
-  /** 撞上翻页上限而停（窗口未覆盖全） */
   capReached: boolean;
   error: string | null;
   windowHours: number;
   setWindowHours: (h: number) => void;
-  /** 手动继续往下翻 pages 页 */
   loadMore: (pages: number) => void;
   loadingMore: boolean;
   moreProgress: MoreProgress | null;
@@ -46,6 +51,8 @@ interface FeedCache {
   at: number;
   hours: number;
   cards: VideoCard[];
+  /** 已加载到的尾部游标。**必须一起存** —— 否则缓存命中后「加载更多」会从第 1 页重来 */
+  tailOffset: string | null;
 }
 
 /** 手动「加载更多」的页数选项 */
@@ -54,8 +61,11 @@ export const LOAD_MORE_OPTIONS = [1, 3, 5, 10];
 /**
  * 动态流加载。
  *
- * 两段式：**第一页先渲染**（秒开），再后台翻页补齐到时间窗边界；
- * 超出窗口之后由用户手动「加载更多」按页续接。
+ * 三种路径：
+ *  1. **无缓存** → 完整加载：第一页秒出，再后台补齐到时间窗边界
+ *  2. **有缓存** → 先把缓存铺上（刷新页面不白屏、不重拉），再**增量刷新**：
+ *     从顶部往下抓，撞见已知条目就停。离开 1 小时通常只需 1 页
+ *  3. **增量追不上**（离线太久）→ 退回完整加载
  */
 export function useFeed(): FeedApi {
   const source = useMemo(() => new InPageDataSource(), []);
@@ -64,6 +74,7 @@ export function useFeed(): FeedApi {
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [filling, setFilling] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [filledPages, setFilledPages] = useState(0);
   const [covered, setCovered] = useState(false);
   const [capReached, setCapReached] = useState(false);
@@ -73,9 +84,7 @@ export function useFeed(): FeedApi {
   const [moreProgress, setMoreProgress] = useState<MoreProgress | null>(null);
 
   const started = useRef(false);
-  /** 已加载到的尾部游标，供续接翻页 */
   const tailOffset = useRef<string | null>(null);
-  /** 与 cards 同步的镜像，便于在异步流程里读写当前全集 */
   const cardsRef = useRef<VideoCard[]>([]);
   const hoursRef = useRef(windowHours);
   /** 加载代次：切换时间窗会启动新加载，旧的那次应丢弃自己的结果 */
@@ -87,33 +96,24 @@ export function useFeed(): FeedApi {
   }, []);
 
   const persistCache = useCallback((hours: number) => {
+    // 卡片被截断时尾部游标已失去对应关系，存了会让「加载更多」跳过一段
+    const truncated = cardsRef.current.length > MAX_CACHED_CARDS;
     writeJson(CACHE_KEY, {
       at: Date.now(),
       hours,
       cards: cardsRef.current.slice(0, MAX_CACHED_CARDS),
+      tailOffset: truncated ? null : tailOffset.current,
     } satisfies FeedCache);
   }, []);
 
-  const load = useCallback(
-    async (hours: number, force: boolean) => {
-      const myGen = ++gen.current;
+  /** 完整加载：第一页 → 后台补齐到窗口边界 */
+  const fullLoad = useCallback(
+    async (hours: number, myGen: number) => {
       setLoading(true);
-      setError(null);
       setCapReached(false);
       setFilledPages(0);
       setMoreProgress(null);
       tailOffset.current = null;
-
-      if (!force) {
-        const cached = readJson<FeedCache | null>(CACHE_KEY, null);
-        if (cached && cached.hours === hours && Date.now() - cached.at < CACHE_TTL_MS) {
-          applyCards(cached.cards);
-          setCovered(true);
-          setHasMore(true);
-          setLoading(false);
-          return;
-        }
-      }
 
       const collected: VideoCard[] = [];
       const seen = new Set<string>();
@@ -127,7 +127,6 @@ export function useFeed(): FeedApi {
       };
 
       try {
-        // ── 第一页：尽快出内容 ──
         const first = await source.fetchPage(null);
         if (myGen !== gen.current) return;
         push(first);
@@ -138,10 +137,10 @@ export function useFeed(): FeedApi {
 
         if (hours === 0) {
           setCovered(true);
+          persistCache(hours);
           return;
         }
 
-        // ── 后台补齐到窗口边界 ──
         setFilling(true);
         const res = await fillToCutoff({
           fetchPage: (offset) => source.fetchPage(offset),
@@ -171,6 +170,69 @@ export function useFeed(): FeedApi {
       }
     },
     [source, applyCards, persistCache],
+  );
+
+  /**
+   * 增量刷新：从顶部往下抓，撞见已知条目即停。
+   * 追到上限还没撞见（离线太久）就返回 false，由调用方退回完整加载。
+   */
+  const incremental = useCallback(
+    async (cachedCards: VideoCard[], myGen: number): Promise<'merged' | 'fallback'> => {
+      setRefreshing(true);
+      let res: Awaited<ReturnType<typeof fetchNewer>>;
+      try {
+        res = await fetchNewer({
+          fetchPage: (offset) => source.fetchPage(offset),
+          known: new Set(cachedCards.map((c) => c.bvid)),
+          maxPages: MAX_INCREMENTAL_PAGES,
+          delayMs: PAGE_DELAY_MS,
+          sleep,
+        });
+      } finally {
+        setRefreshing(false);
+      }
+
+      if (myGen !== gen.current) return 'merged';
+      // 没追上 = 缓存与新增之间有断层，必须整体重来，不能把两段接上
+      if (!res.caughtUp) return 'fallback';
+
+      if (res.fresh.length > 0) applyCards([...res.fresh, ...cardsRef.current]);
+      persistCache(hoursRef.current);
+      return 'merged';
+    },
+    [source, applyCards, persistCache],
+  );
+
+  const load = useCallback(
+    async (hours: number, force: boolean) => {
+      const myGen = ++gen.current;
+      setError(null);
+
+      if (!force) {
+        const cached = readJson<FeedCache | null>(CACHE_KEY, null);
+        if (cached && cached.hours === hours && Array.isArray(cached.cards) && cached.cards.length) {
+          // ① 先把缓存铺上：刷新页面不白屏，也不重跑 10 页
+          applyCards(cached.cards);
+          tailOffset.current = cached.tailOffset ?? null;
+          setCovered(true);
+          setHasMore(true);
+          setLoading(false);
+
+          // ② 刚拉过就连增量都跳过，避免连续刷新打接口
+          if (Date.now() - cached.at < FRESH_MS) return;
+
+          // ③ 增量刷新；追不上就退回完整加载
+          const outcome = await incremental(cached.cards, myGen);
+          if (outcome === 'fallback' && myGen === gen.current) {
+            await fullLoad(hours, myGen);
+          }
+          return;
+        }
+      }
+
+      await fullLoad(hours, myGen);
+    },
+    [incremental, fullLoad, applyCards],
   );
 
   useEffect(() => {
@@ -224,7 +286,7 @@ export function useFeed(): FeedApi {
           setError(e instanceof Error ? e.message : String(e));
         } finally {
           setLoadingMore(false);
-          // 进度保留一小会儿再清，避免闪一下就没了
+          // 进度多留一会儿再清，避免闪一下就没了
           await sleep(600);
           setMoreProgress(null);
         }
@@ -238,6 +300,7 @@ export function useFeed(): FeedApi {
     hasMore,
     loading,
     filling,
+    refreshing,
     filledPages,
     covered,
     capReached,

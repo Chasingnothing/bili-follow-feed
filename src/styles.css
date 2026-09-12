@@ -340,10 +340,19 @@ html.bff-active body {
   white-space: nowrap;
 }
 .bff-diverged {
+  background: none;
+  border: none;
   color: #fb7299;
-  font-size: 12px;
+  font-size: 13px;
   flex: none;
-  cursor: help;
+  cursor: pointer;
+  padding: 0 4px;
+  font-family: inherit;
+  border-radius: 4px;
+}
+.bff-diverged:hover {
+  background: #fb7299;
+  color: #fff;
 }
 .bff-up-more {
   background: none;
@@ -739,4 +748,34 @@ html.bff-active body {
 }
 .bff-danger:hover {
   background: rgba(255, 107, 107, 0.18);
+}
+
+/* ── 分歧提示条 ───────────────────────────────────────────────────────── */
+
+.bff-diverge-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 24px;
+  font-size: 13px;
+  background: rgba(251, 114, 153, 0.12);
+  color: #fb7299;
+  flex-wrap: wrap;
+}
+.bff-diverge-bar button {
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  color: inherit;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+/* 两个按钮靠右 */
+.bff-diverge-bar button:first-of-type {
+  margin-left: auto;
+}
+.bff-diverge-bar button:hover {
+  background: rgba(251, 114, 153, 0.22);
 }

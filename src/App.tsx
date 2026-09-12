@@ -3,6 +3,7 @@ import type { VideoCard } from './types';
 import { useFeed } from './hooks/useFeed';
 import { useFollowings } from './hooks/useFollowings';
 import {
+  acknowledgeDivergence,
   applyBatch,
   canUndoBatch,
   createGroup,
@@ -14,6 +15,7 @@ import {
   pruneStale,
   renameGroup,
   reorderGroup,
+  resetAllDiverged,
   resetFromBilibili,
   seedFromBilibili,
   undoLastBatch,
@@ -253,6 +255,20 @@ export default function App() {
     setPicker(null);
   }, [picker, followings.list, refreshLocal]);
 
+  // ── 分歧的批量处理 ────────────────────────────────────────────────────
+
+  const alignDiverged = useCallback(() => {
+    const n = resetAllDiverged(followings.list);
+    refreshLocal();
+    setNotice(`已按 B站 对齐 ${n} 个 UP 的分组`);
+  }, [followings.list, refreshLocal]);
+
+  const keepLocalClasses = useCallback(() => {
+    const n = acknowledgeDivergence(followings.list);
+    refreshLocal();
+    setNotice(`已保留你的分类，不再提示这 ${n} 项`);
+  }, [followings.list, refreshLocal]);
+
   // ── 分组管理 ──────────────────────────────────────────────────────────
 
   const newGroup = useCallback(
@@ -384,6 +400,20 @@ export default function App() {
             返回 B站
           </a>
         </div>
+
+        {diverged.size > 0 && (
+          <div className="bff-diverge-bar">
+            <span>
+              有 <strong>{diverged.size}</strong> 个 UP 的 B站 分组已变更（右侧有 ↻，点它可单独处理）
+            </span>
+            <button type="button" onClick={alignDiverged}>
+              全部按 B站 对齐
+            </button>
+            <button type="button" onClick={keepLocalClasses}>
+              保持我的分类
+            </button>
+          </div>
+        )}
 
         {storageWarning && (
           <div className="bff-warn">

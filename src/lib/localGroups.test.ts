@@ -10,7 +10,9 @@ import {
   reorderGroup,
   applyBatch,
   undoLastBatch,
+  acknowledgeDivergence,
   detectDivergence,
+  resetAllDiverged,
   resetFromBilibili,
   pruneStale,
   groupsOf,
@@ -326,6 +328,65 @@ describe('resetFromBilibili', () => {
   it('find 不到该 UP 时返回 false', () => {
     seedFromBilibili(rawTags, [up(1, [207542])]);
     expect(resetFromBilibili(999, [up(1, [207542])])).toBe(false);
+  });
+});
+
+describe('resetAllDiverged（分歧的批量对齐）', () => {
+  it('只对齐有分歧的 UP，本地其他分类不受影响', () => {
+    seedFromBilibili(rawTags, [up(1, [207542]), up(2, [207542])]);
+    // 本地把 up2 改到「我的同学」，B站 侧没动他
+    applyBatch([2], { type: 'only', groupId: 'bili-194110' });
+
+    // 只有 up1 在 B站 侧变了
+    const n = resetAllDiverged([up(1, [194110]), up(2, [207542])]);
+
+    expect(n).toBe(1);
+    expect(loadMembership()['1']).toEqual(['bili-194110']); // 已按 B站 对齐
+    expect(loadMembership()['2']).toEqual(['bili-194110']); // 本地分类原样保留
+  });
+
+  it('处理完之后分歧清空', () => {
+    seedFromBilibili(rawTags, [up(1, [207542])]);
+    const changed = [up(1, [194110])];
+    expect(detectDivergence(changed).size).toBe(1);
+    resetAllDiverged(changed);
+    expect(detectDivergence(changed).size).toBe(0);
+  });
+
+  it('没有分歧时返回 0', () => {
+    seedFromBilibili(rawTags, [up(1, [207542])]);
+    expect(resetAllDiverged([up(1, [207542])])).toBe(0);
+  });
+
+  it('对齐到「被复用的同名分组」时用它的真实 id，不留脏引用', () => {
+    seedFromBilibili(rawTags, [up(1, [207542])]);
+    const local = createGroup('娱乐')!;
+
+    // B站 新建了「娱乐」分组，并把 up1 挪进去
+    const entertainment: BiliTag = { tagid: 386068999, name: '娱乐', count: 1 };
+    const now = [up(1, [386068999])];
+    mergeImport([...rawTags, entertainment], now); // 建立 tagid → local 的映射
+    resetAllDiverged(now);
+
+    expect(loadMembership()['1']).toEqual([local.id]);
+    const ids = new Set(loadGroups().map((g) => g.id));
+    for (const gid of loadMembership()['1']) expect(ids.has(gid)).toBe(true);
+  });
+});
+
+describe('acknowledgeDivergence（保持我的分类）', () => {
+  it('保留本地分类，只把快照推进到 B站 当前值', () => {
+    seedFromBilibili(rawTags, [up(1, [207542])]);
+    const changed = [up(1, [194110])];
+
+    expect(acknowledgeDivergence(changed)).toBe(1);
+    expect(loadMembership()['1']).toEqual(['bili-207542']); // ← 本地分类没被改
+    expect(detectDivergence(changed).size).toBe(0); // ← 但不再提示
+  });
+
+  it('没有分歧时返回 0', () => {
+    seedFromBilibili(rawTags, [up(1, [207542])]);
+    expect(acknowledgeDivergence([up(1, [207542])])).toBe(0);
   });
 });
 

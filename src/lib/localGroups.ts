@@ -442,6 +442,51 @@ export function resetFromBilibili(mid: number, followings: TrimmedFollowedUp[]):
   return saveMembership(membership) && saveSnapshot(snapshot);
 }
 
+/**
+ * 把所有检测到分歧的 UP **按 B站 当前分组批量对齐**。返回处理的数量。
+ *
+ * 这是三级同步能力里原先缺失的中间一级：
+ *  按 B站 重置此项（单个）← 太累
+ *  **本函数（只碰有分歧的）** ← 新增
+ *  强制覆盖（全部，会清掉纯本地的分类）← 太重
+ */
+export function resetAllDiverged(followings: TrimmedFollowedUp[]): number {
+  const ids = detectDivergence(followings);
+  if (ids.size === 0) return 0;
+
+  const resolve = tagToGroupId(loadGroups());
+  const membership = loadMembership();
+  const snapshot = loadSnapshot();
+
+  for (const u of followings) {
+    if (!ids.has(u.mid)) continue;
+    setMembership(membership, u.mid, storableGroupIds(u, resolve));
+    snapshot[String(u.mid)] = snapshotOf(u);
+  }
+
+  saveMembership(membership);
+  saveSnapshot(snapshot);
+  return ids.size;
+}
+
+/**
+ * 「保持我的分类」：只把快照更新到 B站 当前值，**不改动任何 membership**。
+ *
+ * 语义不是"隐藏提示"，而是"我看过了，决定保留自己的分类" —— 快照推进之后
+ * 这些项自然不再被判定为分歧，也就不会再提示。用户在本次操作前的分类完好无损。
+ */
+export function acknowledgeDivergence(followings: TrimmedFollowedUp[]): number {
+  const ids = detectDivergence(followings);
+  if (ids.size === 0) return 0;
+
+  const snapshot = loadSnapshot();
+  for (const u of followings) {
+    if (ids.has(u.mid)) snapshot[String(u.mid)] = snapshotOf(u);
+  }
+  saveSnapshot(snapshot);
+  return ids.size;
+}
+
 // ── 清理 ────────────────────────────────────────────────────────────────
 
 /** 清理不在当前关注列表里的 membership / snapshot 记录，返回释放的字符数估算 */

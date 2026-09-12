@@ -182,9 +182,14 @@ export default function Sidebar(props: Props) {
                         <span className="bff-up-name">{u.uname}</span>
                       </a>
                       {diverged.has(u.mid) && (
-                        <span className="bff-diverged" title="B站 侧的分组已变更">
+                        <button
+                          type="button"
+                          className="bff-diverged"
+                          onClick={(e) => onPick(u.mid, e.currentTarget)}
+                          title="B站 侧的分组已变更 —— 点击处理"
+                        >
                           ↻
-                        </span>
+                        </button>
                       )}
                       <button
                         type="button"

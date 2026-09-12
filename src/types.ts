@@ -23,6 +23,15 @@ export interface FeedPage {
   items: VideoCard[];
   nextOffset: string | null;
   hasMore: boolean;
+  /**
+   * 本页**全部**条目中最早的发布时刻（秒级）。
+   *
+   * 判据必须取自原始条目而不是映射后的视频卡片 —— 一页 21 条里可能一条视频都
+   * 没有（全是图文/转发），那时就无法从卡片判断这页翻到了哪个时间点，
+   * 「翻到覆盖 N 天」的停止条件会失效。
+   * 没有任何条目时为 0（调用方据此判定"到头了"）。
+   */
+  oldestPubTs: number;
 }
 
 /** B站 关注分组。tagid -10=特别关注、0=默认分组，两者恒定。 */

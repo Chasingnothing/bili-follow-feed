@@ -63,4 +63,30 @@ describe('InPageDataSource', () => {
     expect(page.items).toHaveLength(0);
     expect(page.hasMore).toBe(false);
   });
+
+  it('oldestPubTs 取自全部条目，含非视频的图文', async () => {
+    const draw = {
+      type: 'DYNAMIC_TYPE_DRAW',
+      modules: { module_author: { pub_ts: '1789100000' } },
+    };
+    stubFetch({ code: 0, data: { items: [avItem, draw], has_more: true, offset: 'o' } });
+    const page = await new InPageDataSource().fetchPage(null);
+    expect(page.oldestPubTs).toBe(1789100000);
+  });
+
+  it('一页全是非视频条目时仍能报出最早时间（否则覆盖判据会失效）', async () => {
+    const draw = {
+      type: 'DYNAMIC_TYPE_DRAW',
+      modules: { module_author: { pub_ts: '1789000000' } },
+    };
+    stubFetch({ code: 0, data: { items: [draw], has_more: true, offset: 'o' } });
+    const page = await new InPageDataSource().fetchPage(null);
+    expect(page.items).toHaveLength(0);
+    expect(page.oldestPubTs).toBe(1789000000);
+  });
+
+  it('无任何条目时 oldestPubTs 为 0（调用方据此判定到头了）', async () => {
+    stubFetch({ code: 0, data: { items: [], has_more: true, offset: 'o' } });
+    expect((await new InPageDataSource().fetchPage(null)).oldestPubTs).toBe(0);
+  });
 });

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { VideoCard } from './types';
 import { useFeed } from './hooks/useFeed';
+import { WINDOW_OPTIONS } from './lib/feedWindow';
 import { useFollowings } from './hooks/useFollowings';
 import {
   acknowledgeDivergence,
@@ -385,10 +386,23 @@ export default function App() {
             <option value="flat">平铺视图</option>
           </select>
 
+          <select
+            value={feed.windowHours}
+            onChange={(e) => feed.setWindowHours(Number(e.target.value))}
+            disabled={feed.loading}
+            title="翻页加载到覆盖多久之前的内容。翻页越多越慢，但分组板块越完整"
+          >
+            {WINDOW_OPTIONS.map((o) => (
+              <option key={o.hours} value={o.hours}>
+                {o.hours === 0 ? '仅加载首页' : `加载到 ${o.label}前`}
+              </option>
+            ))}
+          </select>
+
           <button type="button" onClick={onMarkAllRead} disabled={feed.cards.length === 0}>
             全部标记已读
           </button>
-          <button type="button" onClick={() => feed.loadMore(true)} disabled={feed.loading}>
+          <button type="button" onClick={feed.refresh} disabled={feed.loading || feed.filling}>
             刷新
           </button>
 
@@ -412,6 +426,19 @@ export default function App() {
             <button type="button" onClick={keepLocalClasses}>
               保持我的分类
             </button>
+          </div>
+        )}
+
+        {feed.filling && (
+          <div className="bff-filling">
+            正在补齐更早的内容… 已翻 {feed.filledPages} 页 / 累计 {feed.cards.length} 条
+            <span className="bff-filling-hint">（可以先用，内容会陆续补上）</span>
+          </div>
+        )}
+
+        {feed.capReached && !feed.filling && (
+          <div className="bff-filling bff-capped">
+            已加载 {feed.cards.length} 条，达到翻页上限仍未覆盖所选时间窗。想看得更早请用底部的「加载更多」。
           </div>
         )}
 
@@ -457,7 +484,7 @@ export default function App() {
 
         {!feed.error && feed.hasMore && (
           <div className="bff-more">
-            <button type="button" onClick={() => feed.loadMore(false)} disabled={feed.loading}>
+            <button type="button" onClick={feed.loadMore} disabled={feed.loading}>
               {feed.loading ? '加载中…' : '加载更多'}
             </button>
           </div>

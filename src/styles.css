@@ -529,9 +529,11 @@ html.bff-active body {
   flex: none;
   cursor: grab;
   color: #6a6d73;
-  padding: 4px 6px;
+  /* 做大一些：落点好找，抓取点也要好按 */
+  padding: 6px 11px;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: 16px;
+  line-height: 1;
   user-select: none;
 }
 .bff-drag:hover {
@@ -560,15 +562,21 @@ html.bff-active body {
   opacity: 0.25;
   cursor: default;
 }
-/* 拖动中的板块半透明；放置位置用 inset 阴影画线，不占布局所以不会抖 */
-.bff-section-head.is-dragging {
-  opacity: 0.45;
+/* 拖动中的板块**整体**虚化 —— 板块很高，只虚化标题的话视觉锚点太弱 */
+.bff-section.is-dragging {
+  opacity: 0.4;
 }
-.bff-section-head.drop-before {
-  box-shadow: inset 0 3px 0 #fb7299;
+/* 落点提示：板块边界上的插入线 + 整个目标板块的描边。
+   用 inset 阴影画，不占布局所以不会引起抖动 */
+.bff-section.drop-before {
+  box-shadow:
+    inset 0 3px 0 #fb7299,
+    inset 0 0 0 1px rgba(251, 114, 153, 0.45);
 }
-.bff-section-head.drop-after {
-  box-shadow: inset 0 -3px 0 #fb7299;
+.bff-section.drop-after {
+  box-shadow:
+    inset 0 -3px 0 #fb7299,
+    inset 0 0 0 1px rgba(251, 114, 153, 0.45);
 }
 .bff-section-name {
   font-weight: 600;

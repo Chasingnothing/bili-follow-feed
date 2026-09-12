@@ -58,8 +58,8 @@ export default function GroupSection({
   // 翻页后把本板块滚回顶部 —— 否则页数少的那一页会让板块变矮、视野跳到下一个板块
   const { ref, bump } = useScrollToTopOnPage<HTMLElement>();
 
-  const headClass = [
-    'bff-section-head',
+  const sectionClass = [
+    'bff-section',
     move.dragging ? 'is-dragging' : '',
     move.dropEdge ? `drop-${move.dropEdge}` : '',
   ]
@@ -67,19 +67,34 @@ export default function GroupSection({
     .join(' ');
 
   return (
-    <section className="bff-section" ref={ref}>
-      <div
-        className={headClass}
-        onDragOver={(e) => {
-          e.preventDefault();
-          const r = e.currentTarget.getBoundingClientRect();
-          move.onDragOver(e.clientY < r.top + r.height / 2 ? 'before' : 'after');
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          move.onDrop();
-        }}
-      >
+    <section
+      className={sectionClass}
+      ref={ref}
+      /*
+       * 落点必须挂在**整个 section** 上。之前只挂在标题那条（约 40px），
+       * 而板块有几百上千像素高 —— 拖到板块中间（95% 的面积）根本不算落点，
+       * 被判成"板块外"而取消，用户会觉得是自己手不准。
+       */
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const r = e.currentTarget.getBoundingClientRect();
+        const ratio = (e.clientY - r.top) / Math.max(1, r.height);
+        // 中线附近留死区：否则在分界线上轻微移动会让指示线来回闪
+        const edge =
+          ratio < 0.44
+            ? 'before'
+            : ratio > 0.56
+              ? 'after'
+              : (move.dropEdge ?? (ratio < 0.5 ? 'before' : 'after'));
+        move.onDragOver(edge);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        move.onDrop();
+      }}
+    >
+      <div className="bff-section-head">
         <button
           type="button"
           className="bff-section-toggle"

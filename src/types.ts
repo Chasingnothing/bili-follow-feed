@@ -24,3 +24,39 @@ export interface FeedPage {
   nextOffset: string | null;
   hasMore: boolean;
 }
+
+/** B站 关注分组。tagid -10=特别关注、0=默认分组，两者恒定。 */
+export interface BiliTag {
+  tagid: number;
+  name: string;
+  count: number;
+}
+
+/**
+ * 裁剪后的关注项 —— 只保留落盘需要的字段。
+ * B站 原始项还带 sign / vip / official_verify 等，体积是这里的 4-5 倍。
+ */
+export interface TrimmedFollowedUp {
+  mid: number;
+  uname: string;
+  /** 已提升为 https */
+  face: string;
+  /** null = 只在 B站 默认分组 */
+  tag: number[] | null;
+  special: 0 | 1;
+}
+
+/** 当前登录用户 */
+export interface SelfInfo {
+  mid: number;
+  uname: string;
+}
+
+/** 侧边栏与卡片链接所需的 UP 信息 */
+export interface UpInfo {
+  mid: number;
+  name: string;
+  /** 已提升为 https */
+  face: string;
+  isSpecial: boolean;
+}

@@ -598,6 +598,80 @@ describe('隐藏分组', () => {
   });
 });
 
+// ── 系统分组自愈（纯追加式升级的传导）──────────────────────────────────
+
+describe('系统分组补齐', () => {
+  /** 模拟 v0.8.0 之前的存储：只有两个系统分组，没有「隐藏」 */
+  const legacyGroups = [
+    { id: SPECIAL_ID, name: '特别关注', order: 0, kind: 'system' as const, source: 'bilibili' as const },
+    {
+      id: UNCATEGORIZED_ID,
+      name: '未分类',
+      order: 9980,
+      kind: 'system' as const,
+      source: 'bilibili' as const,
+    },
+    {
+      id: 'bili-207542',
+      name: '电影',
+      order: 10,
+      kind: 'normal' as const,
+      source: 'bilibili' as const,
+      biliTagId: 207542,
+    },
+  ];
+
+  it('老数据缺少「隐藏」时自动补上', () => {
+    localStorage.setItem('bff:groups', JSON.stringify(legacyGroups));
+    expect(loadGroups().map((g) => g.id)).toContain(HIDDEN_ID);
+  });
+
+  it('补齐不会损坏已有的自定义分组', () => {
+    localStorage.setItem('bff:groups', JSON.stringify(legacyGroups));
+    const movie = loadGroups().find((g) => g.id === 'bili-207542');
+    expect(movie?.name).toBe('电影');
+    expect(movie?.biliTagId).toBe(207542);
+    expect(loadGroups().filter((g) => g.id === 'bili-207542')).toHaveLength(1);
+  });
+
+  it('补齐会落盘，不只在本次返回值里', () => {
+    localStorage.setItem('bff:groups', JSON.stringify(legacyGroups));
+    loadGroups();
+    const raw = JSON.parse(localStorage.getItem('bff:groups')!) as Group[];
+    expect(raw.map((g) => g.id)).toContain(HIDDEN_ID);
+  });
+
+  it('已经齐全时不做任何改动（不重复、不改 order）', () => {
+    seedFromBilibili(rawTags, []);
+    const before = JSON.stringify(
+      loadGroups()
+        .sort((a, b) => a.order - b.order)
+        .map((g) => ({ id: g.id, order: g.order })),
+    );
+    loadGroups();
+    const after = JSON.stringify(
+      loadGroups()
+        .sort((a, b) => a.order - b.order)
+        .map((g) => ({ id: g.id, order: g.order })),
+    );
+    expect(after).toBe(before);
+    expect(loadGroups()).toHaveLength(loadGroups().length);
+  });
+
+  it('用户把「隐藏」拖到最前之后，再读取不会把它拉回末尾', () => {
+    seedFromBilibili(rawTags, []);
+    const ids = loadGroups()
+      .sort((a, b) => a.order - b.order)
+      .map((g) => g.id);
+    reorderGroups([HIDDEN_ID, ...ids.filter((id) => id !== HIDDEN_ID)]);
+
+    const after = loadGroups()
+      .sort((a, b) => a.order - b.order)
+      .map((g) => g.id);
+    expect(after[0]).toBe(HIDDEN_ID);
+  });
+});
+
 // ── 读取容错 ────────────────────────────────────────────────────────────
 
 describe('读取容错', () => {

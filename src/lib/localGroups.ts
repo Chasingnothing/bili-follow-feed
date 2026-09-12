@@ -71,7 +71,24 @@ type Snapshot = Record<string, number[]>;
 export function loadGroups(): Group[] {
   const stored = readJson<Group[]>(GROUPS_KEY, []);
   if (!Array.isArray(stored) || stored.length === 0) return systemGroups();
-  return stored;
+
+  /*
+   * 自愈：补齐缺失的系统分组。
+   *
+   * 只靠 systemGroups() 的默认值是不够的 —— 那只在**存储为空**时生效。已经用过
+   * 的安装里 bff:groups 已有内容，本函数会直接返回那份旧列表，于是"新增一个系统
+   * 分组"这种纯追加式升级永远传导不到老用户（v0.8.0 的「隐藏」就踩了这个坑：
+   * 新装能看到，老用户三处都看不到）。
+   *
+   * 放在这里而不是某个初始化函数里，是为了让任何调用方都不可能忘记调用它。
+   */
+  const have = new Set(stored.map((g) => g.id));
+  const missing = systemGroups().filter((g) => !have.has(g.id));
+  if (missing.length === 0) return stored;
+
+  const merged = [...stored, ...missing];
+  saveGroups(merged);
+  return merged;
 }
 
 /** 是否已经做过首次导入。

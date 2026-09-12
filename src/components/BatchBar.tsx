@@ -15,6 +15,9 @@ interface Props {
 /**
  * 批量分类操作条（设计文档 §6.3）。
  *
+ * 只保留低频操作 —— 「加入分组」已经移到主区顶部的图标面板，那里一次点击即可，
+ * 不再需要"点开下拉再选"两步。
+ *
  * 三个下拉都是「选完即执行」，执行后回到占位项（受控 value="" 保证这一点）。
  * 批量误操作代价高，所以撤销入口常驻在这里。
  */
@@ -41,15 +44,6 @@ export default function BatchBar({
   return (
     <div className="bff-batch">
       <span className="bff-batch-count">已选 {count} 个</span>
-
-      <select value="" disabled={disabled} onChange={pick((g) => ({ type: 'add', groupId: g }))}>
-        <option value="">加入分组 ▾</option>
-        {ordered.map((g) => (
-          <option key={g.id} value={g.id}>
-            {g.name}
-          </option>
-        ))}
-      </select>
 
       <select value="" disabled={disabled} onChange={pick((g) => ({ type: 'remove', groupId: g }))}>
         <option value="">移出分组 ▾</option>

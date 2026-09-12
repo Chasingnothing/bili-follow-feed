@@ -21,6 +21,11 @@ html.bff-active body {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
+  /* 吸顶头部的高度，板块按这个留出滚动余量。批量模式下头部更高 */
+  --bff-head-h: 60px;
+}
+.bff-main.is-batch {
+  --bff-head-h: 154px;
 }
 .bff-root * {
   box-sizing: border-box;
@@ -36,6 +41,16 @@ html.bff-active body {
   padding: 12px 24px;
   background: #1f2023;
   border-bottom: 1px solid #2b2c2f;
+}
+.bff-sticky-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #1f2023;
+}
+.bff-sticky-head .bff-bar {
+  position: static;
+  z-index: auto;
 }
 .bff-bar strong {
   font-size: 15px;
@@ -489,8 +504,8 @@ html.bff-active body {
 
 .bff-section {
   margin-bottom: 4px;
-  /* 翻页后滚回板块顶部时，给吸顶工具条留出空间，别把标题顶到它下面 */
-  scroll-margin-top: 60px;
+  /* 翻页后滚回板块顶部时，给吸顶头部留出空间，别把标题顶到它下面 */
+  scroll-margin-top: var(--bff-head-h, 60px);
   /* 插入线用绝对定位伪元素，需要定位上下文 */
   position: relative;
 }
@@ -766,6 +781,66 @@ html.bff-active body {
 }
 .bff-batch-exit {
   margin-left: auto;
+}
+
+/* ── 批量分组图标面板 ─────────────────────────────────────────────────── */
+
+.bff-batchpanel {
+  padding: 8px 24px 10px;
+  border-bottom: 1px solid #2b2c2f;
+}
+.bff-batchpanel-title {
+  font-size: 12px;
+  color: #9499a0;
+  margin-bottom: 8px;
+}
+.bff-batchpanel-title strong {
+  color: #fb7299;
+}
+.bff-batchpanel-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.bff-folder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 180px;
+  padding: 6px 10px;
+  background: #2b2c2f;
+  border: 1px solid #3a3b3e;
+  border-radius: 8px;
+  color: #e3e5e7;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.bff-folder:hover:not(:disabled) {
+  background: #fb7299;
+  border-color: #fb7299;
+  color: #fff;
+}
+.bff-folder:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* 选中的 UP 已全在这个分组里 —— 点它也没有变化，用绿勾说明 */
+.bff-folder.is-contained {
+  border-color: #3f6b48;
+}
+.bff-folder-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+.bff-folder-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bff-folder-tick {
+  flex: none;
+  color: #7ed321;
 }
 
 /* ── 提示条 ───────────────────────────────────────────────────────────── */

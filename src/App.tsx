@@ -48,6 +48,7 @@ import GroupPicker from './components/GroupPicker';
 import GroupMenu from './components/GroupMenu';
 import BatchBar from './components/BatchBar';
 import LoadMoreBar from './components/LoadMoreBar';
+import BatchGroupPanel from './components/BatchGroupPanel';
 import { BILIBILI_HOME } from './lib/route';
 import './styles.css';
 
@@ -422,6 +423,23 @@ export default function App() {
 
   const usage = useMemo(() => bffUsage(), [dataVersion, readSet, membership]);
 
+  /** 选中的 UP **已全部在**里面的分组 —— 面板上这些图标会显示为已完成 */
+  const allContained = useMemo(() => {
+    const ids = [...selected];
+    const out = new Set<string>();
+    if (ids.length === 0) return out;
+    for (const g of groups) {
+      if (ids.every((mid) => (membership[String(mid)] ?? []).includes(g.id))) out.add(g.id);
+    }
+    return out;
+  }, [groups, membership, selected]);
+
+  /** 选中的 UP 是否都还没有任何分组（即都处于未分类） */
+  const allUncategorized = useMemo(() => {
+    const ids = [...selected];
+    return ids.length > 0 && ids.every((mid) => (membership[String(mid)] ?? []).length === 0);
+  }, [membership, selected]);
+
   return (
     <div className="bff-root">
       <Sidebar
@@ -444,7 +462,9 @@ export default function App() {
         onOpenGroupMenu={(el) => setMenuAnchor(el.getBoundingClientRect())}
       />
 
-      <main className="bff-main">
+      <main className={`bff-main${batchActive ? ' is-batch' : ''}`}>
+        {/* 工具条与批量面板一起吸顶，保证选 UP 时两者都看得见 */}
+        <div className="bff-sticky-head">
         <div className="bff-bar">
           <strong>只看关注</strong>
 
@@ -490,6 +510,18 @@ export default function App() {
           <a className="bff-back" href={BILIBILI_HOME}>
             返回 B站
           </a>
+        </div>
+
+        {batchActive && (
+          <BatchGroupPanel
+            groups={groups}
+            selectedCount={selected.size}
+            allContained={allContained}
+            allUncategorized={allUncategorized}
+            onAdd={(gid) => runBatch({ type: 'add', groupId: gid })}
+            onClearAll={() => runBatch({ type: 'clear' })}
+          />
+        )}
         </div>
 
         {diverged.size > 0 && (

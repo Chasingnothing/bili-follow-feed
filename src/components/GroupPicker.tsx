@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Group } from '../lib/localGroups';
 import { MAX_GROUP_NAME } from '../lib/localGroups';
 import { HIDDEN_ID } from '../lib/upIndex';
+import { usePopoverPosition, POPOVER_HIDDEN_STYLE } from '../hooks/usePopoverPosition';
 
 interface Props {
   upName: string;
@@ -55,15 +56,22 @@ export default function GroupPicker({
     };
   }, [onClose]);
 
-  // 贴边时向左收，避免超出视口
   const width = 240;
-  const left = Math.min(anchor.left, window.innerWidth - width - 8);
-  const top = Math.min(anchor.bottom + 4, window.innerHeight - 60);
+  // 优先下方，放不下翻到上方，都放不下就压缩列表高度
+  const pos = usePopoverPosition(anchor, ref, width);
 
   const ordered = [...groups].sort((a, b) => a.order - b.order);
 
   return (
-    <div className="bff-picker" style={{ left, top, width }} ref={ref}>
+    <div
+      className={`bff-picker${pos ? ` is-${pos.placement}` : ''}`}
+      style={
+        pos
+          ? { left: pos.left, top: pos.top, maxHeight: pos.maxHeight, width }
+          : { ...POPOVER_HIDDEN_STYLE, width }
+      }
+      ref={ref}
+    >
       <div className="bff-picker-head">
         {upName}
         {diverged && <span className="bff-picker-diverge">↻ B站已变更</span>}

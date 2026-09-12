@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { MAX_GROUP_NAME, type Group } from '../lib/localGroups';
+import { usePopoverPosition, POPOVER_HIDDEN_STYLE } from '../hooks/usePopoverPosition';
 
 interface Props {
   anchor: DOMRect;
@@ -59,13 +60,21 @@ export default function GroupMenu({
   }, [onClose]);
 
   const width = 300;
-  const left = Math.min(anchor.left, window.innerWidth - width - 8);
-  const top = Math.min(anchor.bottom + 4, Math.max(8, window.innerHeight - 420));
+  // 与分组勾选菜单共用同一套定位规则（原来这里也拍了一个 420 的固定值）
+  const pos = usePopoverPosition(anchor, ref, width);
 
   const custom = [...groups].filter((g) => g.kind === 'normal').sort((a, b) => a.order - b.order);
 
   return (
-    <div className="bff-gmenu" style={{ left, top, width }} ref={ref}>
+    <div
+      className={`bff-gmenu${pos ? ` is-${pos.placement}` : ''}`}
+      style={
+        pos
+          ? { left: pos.left, top: pos.top, maxHeight: pos.maxHeight, width }
+          : { ...POPOVER_HIDDEN_STYLE, width }
+      }
+      ref={ref}
+    >
       <div className="bff-gmenu-head">分组管理</div>
 
       <form

@@ -44,6 +44,22 @@ describe('biliGroupIdsOf', () => {
   it('tag 含 0 与 -10 时只保留 special', () => {
     expect(biliGroupIdsOf(up({ tag: [0, -10] }))).toEqual([SPECIAL_ID]);
   });
+
+  it('传入解析器时用解析结果代替 bili-<tagid>', () => {
+    const resolve = (tagid: number) => (tagid === 207542 ? 'local-1' : undefined);
+    expect(biliGroupIdsOf(up({ tag: [207542] }), resolve)).toEqual(['local-1']);
+  });
+
+  it('解析器返回 undefined 时回落到 bili-<tagid>', () => {
+    expect(biliGroupIdsOf(up({ tag: [999] }), () => undefined)).toEqual(['bili-999']);
+  });
+
+  it('解析器不影响 special 的映射', () => {
+    expect(biliGroupIdsOf(up({ tag: [-10, 207542] }), () => 'local-9')).toEqual([
+      SPECIAL_ID,
+      'local-9',
+    ]);
+  });
 });
 
 describe('buildUpIndex', () => {

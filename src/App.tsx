@@ -303,9 +303,12 @@ export default function App() {
   }, [followings.tags, followings.list, refreshLocal]);
 
   const mergeNow = useCallback(() => {
-    const { added } = mergeImport(followings.tags, followings.list);
+    const { added, adopted } = mergeImport(followings.tags, followings.list);
     refreshLocal();
-    setNotice(added > 0 ? `已为 ${added} 个未分类 UP 补充分组` : '没有需要补充的 UP');
+    const parts: string[] = [];
+    if (added > 0) parts.push(`已为 ${added} 个未分类 UP 补充分组`);
+    if (adopted.length > 0) parts.push(`B站 的同名分组已并入本地：${adopted.join('、')}`);
+    setNotice(parts.length > 0 ? parts.join('；') : '没有需要补充的 UP');
   }, [followings.tags, followings.list, refreshLocal]);
 
   const cleanup = useCallback(() => {

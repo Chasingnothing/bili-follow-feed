@@ -8,6 +8,13 @@ export interface Group {
   order: number;
   kind: 'system' | 'normal';
   source: 'bilibili' | 'local';
+  /**
+   * 该本地分组对应的 B站 分组 tagid（若由导入建立、或并入过同名 B站 分组）。
+   *
+   * 有这个字段才能把 B站 分组**稳定地**映射到本地分组；靠 id 前缀（`bili-`）
+   * 猜是不够的 —— 用户先在本地建的同名分组 id 是 `local-N`，永远匹配不上。
+   */
+  biliTagId?: number;
 }
 
 export type BatchOp =
@@ -105,8 +112,26 @@ function snapshotOf(up: TrimmedFollowedUp): number[] {
 }
 
 /** 把 B站 分组归属转成可落盘的本地 membership（**过滤掉隐式的未分类**） */
-function storableGroupIds(up: TrimmedFollowedUp): string[] {
-  return biliGroupIdsOf(up).filter((id) => id !== UNCATEGORIZED_ID);
+function storableGroupIds(
+  up: TrimmedFollowedUp,
+  resolve?: (tagid: number) => string | undefined,
+): string[] {
+  return biliGroupIdsOf(up, resolve).filter((id) => id !== UNCATEGORIZED_ID);
+}
+
+/**
+ * tagid → 本地分组 id。
+ *
+ * 这是修复「同名分组被重复创建」时必须配套的东西：复用同名本地分组后，
+ * 该分组的 id 是 `local-N` 而不是 `bili-<tagid>`，翻译 B站 归属时必须查表，
+ * 不能靠拼字符串。
+ */
+function tagToGroupId(groups: Group[]): (tagid: number) => string | undefined {
+  const map = new Map<number, string>();
+  for (const g of groups) {
+    if (typeof g.biliTagId === 'number') map.set(g.biliTagId, g.id);
+  }
+  return (tagid: number) => map.get(tagid);
 }
 
 function setMembership(m: Membership, mid: number, ids: string[]): void {
@@ -143,13 +168,15 @@ export function seedFromBilibili(tags: BiliTag[], followings: TrimmedFollowedUp[
       order: order++,
       kind: 'normal',
       source: 'bilibili',
+      biliTagId: tagid,
     });
   }
 
+  const resolve = tagToGroupId(groups);
   const membership: Membership = {};
   const snapshot: Snapshot = {};
   for (const u of followings) {
-    setMembership(membership, u.mid, storableGroupIds(u));
+    setMembership(membership, u.mid, storableGroupIds(u, resolve));
     snapshot[String(u.mid)] = snapshotOf(u);
   }
 
@@ -160,35 +187,85 @@ export function seedFromBilibili(tags: BiliTag[], followings: TrimmedFollowedUp[
 // ── 合并导入 ────────────────────────────────────────────────────────────
 
 /**
+ * 把 B站 分组映射到本地分组，**必要时复用同名本地分组**。
+ *
+ * 匹配顺序（顺序很重要）：
+ *  1. 已有分组的 `biliTagId` 等于该 tagid —— 之前导入过它
+ *  2. 存在**同名**的本地分组 —— 视为同一个分组，把 tagid 记上去
+ *  3. 都没有 —— 新建 `bili-<tagid>`
+ *
+ * 第 2 条修的是一个真实 bug：用户先在本地建了「娱乐」，之后在 B站 也建了
+ * 「娱乐」并加了人。补充导入时因为 id 前缀不同（`local-1` vs `bili-386068xxx`）
+ * 被判定成"本地没有"，于是新建了一个同名分组，UP 全进了新组，出现两个同名
+ * 分组。根因是**只按 id 去重，没按名字去重**。
+ */
+function ensureGroupsForTags(groups: Group[], tags: BiliTag[]): { adopted: string[] } {
+  const adopted: string[] = [];
+  let maxOrder = groups.reduce(
+    (acc, g) => (g.order < ORDER_UNCATEGORIZED ? Math.max(acc, g.order) : acc),
+    ORDER_CUSTOM_START - 1,
+  );
+
+  for (const t of tags) {
+    if (t.tagid === BILI_SPECIAL_TAGID || t.tagid === BILI_DEFAULT_TAGID) continue;
+    if (groups.some((g) => g.biliTagId === t.tagid)) continue;
+
+    const name = t.name.trim();
+    const sameName = groups.find((g) => g.kind === 'normal' && g.name === name);
+    if (sameName) {
+      sameName.biliTagId = t.tagid;
+      adopted.push(name);
+      continue;
+    }
+
+    groups.push({
+      id: `bili-${t.tagid}`,
+      name: t.name,
+      order: ++maxOrder,
+      kind: 'normal',
+      source: 'bilibili',
+      biliTagId: t.tagid,
+    });
+  }
+  return { adopted };
+}
+
+/**
  * 合并导入（「补充导入分组」）：**只给本地尚未分类的 UP 按 B站 归类**，
  * 已有本地归类的一律不动。
  *
  * 快照也**只对本次真正归类过的 UP 更新** —— 否则一个尚未处理的分歧会被
  * 静默清掉，用户就再也看不到那个提示了。
  */
-export function mergeImport(tags: BiliTag[], followings: TrimmedFollowedUp[]): { added: number } {
+export function mergeImport(
+  tags: BiliTag[],
+  followings: TrimmedFollowedUp[],
+): { added: number; adopted: string[] } {
   const groups = loadGroups();
   const membership = loadMembership();
   const snapshot = loadSnapshot();
 
-  // 补上 B站 新增的、本地还没有的分组
-  const existing = new Set(groups.map((g) => g.id));
-  let maxOrder = groups.reduce(
-    (acc, g) => (g.order < ORDER_UNCATEGORIZED ? Math.max(acc, g.order) : acc),
-    ORDER_CUSTOM_START - 1,
-  );
-  for (const t of tags) {
-    if (t.tagid === BILI_SPECIAL_TAGID || t.tagid === BILI_DEFAULT_TAGID) continue;
-    const id = `bili-${t.tagid}`;
-    if (existing.has(id)) continue;
-    groups.push({ id, name: t.name, order: ++maxOrder, kind: 'normal', source: 'bilibili' });
-    existing.add(id);
+  // B站 的 tags 未列出、但被 followings 引用到的 tagid 也要补上，
+  // 否则会产生指向不存在分组的脏引用
+  const known = new Set(tags.map((t) => t.tagid));
+  const extra: BiliTag[] = [];
+  for (const u of followings) {
+    for (const tagid of snapshotOf(u)) {
+      if (tagid === BILI_SPECIAL_TAGID || tagid === BILI_DEFAULT_TAGID) continue;
+      if (known.has(tagid)) continue;
+      known.add(tagid);
+      extra.push({ tagid, name: `分组 ${tagid}`, count: 0 });
+    }
   }
+
+  // 把 B站 分组映射到本地分组（同名则复用已有分组，不新建）
+  const { adopted } = ensureGroupsForTags(groups, [...tags, ...extra]);
+  const resolve = tagToGroupId(groups);
 
   let added = 0;
   for (const u of followings) {
     if (membership[String(u.mid)] === undefined) {
-      setMembership(membership, u.mid, storableGroupIds(u));
+      setMembership(membership, u.mid, storableGroupIds(u, resolve));
       snapshot[String(u.mid)] = snapshotOf(u);
       added++;
     }
@@ -197,7 +274,7 @@ export function mergeImport(tags: BiliTag[], followings: TrimmedFollowedUp[]): {
   saveGroups(groups);
   saveMembership(membership);
   saveSnapshot(snapshot);
-  return { added };
+  return { added, adopted };
 }
 
 // ── 分组 CRUD ───────────────────────────────────────────────────────────
@@ -360,7 +437,7 @@ export function resetFromBilibili(mid: number, followings: TrimmedFollowedUp[]):
 
   const membership = loadMembership();
   const snapshot = loadSnapshot();
-  setMembership(membership, mid, storableGroupIds(up));
+  setMembership(membership, mid, storableGroupIds(up, tagToGroupId(loadGroups())));
   snapshot[String(mid)] = snapshotOf(up);
   return saveMembership(membership) && saveSnapshot(snapshot);
 }

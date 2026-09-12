@@ -350,6 +350,81 @@ describe('pruneStale', () => {
   });
 });
 
+// ── 同名分组不应被重复创建（真实 bug 回归）─────────────────────────────
+
+describe('补充导入时的同名分组复用', () => {
+  const ENTERTAINMENT: BiliTag = { tagid: 386068999, name: '娱乐', count: 2 };
+
+  it('本地已有同名分组时复用，不新建（修前会变成两个「娱乐」）', () => {
+    seedFromBilibili(rawTags, [up(1, null)]);
+    const local = createGroup('娱乐')!;
+
+    mergeImport([...rawTags, ENTERTAINMENT], [up(1, null), up(2, [386068999])]);
+
+    const same = loadGroups().filter((g) => g.name === '娱乐');
+    expect(same).toHaveLength(1);
+    expect(same[0].id).toBe(local.id);
+    expect(same[0].biliTagId).toBe(386068999);
+  });
+
+  it('被复用的分组确实拿到了 B站 侧的 UP（不能掉进未分类）', () => {
+    seedFromBilibili(rawTags, [up(1, null)]);
+    const local = createGroup('娱乐')!;
+    mergeImport([ENTERTAINMENT], [up(1, [386068999])]);
+    expect(loadMembership()['1']).toEqual([local.id]);
+  });
+
+  it('membership 不会指向不存在的分组 id', () => {
+    seedFromBilibili(rawTags, [up(1, null)]);
+    createGroup('娱乐');
+    mergeImport([ENTERTAINMENT], [up(1, [386068999])]);
+    const ids = new Set(loadGroups().map((g) => g.id));
+    for (const gids of Object.values(loadMembership())) {
+      for (const gid of gids) expect(ids.has(gid)).toBe(true);
+    }
+  });
+
+  it('返回并入了哪些分组名，供界面提示', () => {
+    seedFromBilibili(rawTags, [up(1, null)]);
+    createGroup('娱乐');
+    expect(mergeImport([ENTERTAINMENT], [up(1, null)]).adopted).toContain('娱乐');
+  });
+
+  it('重复导入不会因为已记录 tagid 而再建一次', () => {
+    seedFromBilibili(rawTags, [up(1, null)]);
+    createGroup('娱乐');
+    mergeImport([ENTERTAINMENT], [up(1, null)]);
+    mergeImport([ENTERTAINMENT], [up(1, null)]);
+    expect(loadGroups().filter((g) => g.name === '娱乐')).toHaveLength(1);
+  });
+
+  it('没有同名分组时仍然新建，并记下 biliTagId', () => {
+    seedFromBilibili(rawTags, [up(1, null)]);
+    mergeImport([ENTERTAINMENT], [up(1, null)]);
+    const created = loadGroups().find((g) => g.name === '娱乐');
+    expect(created?.id).toBe('bili-386068999');
+    expect(created?.biliTagId).toBe(386068999);
+  });
+
+  it('系统分组不会被同名复用逻辑误伤', () => {
+    seedFromBilibili(rawTags, [up(1, null)]);
+    expect(loadGroups().filter((g) => g.name === '特别关注')).toHaveLength(1);
+    expect(loadGroups().find((g) => g.id === SPECIAL_ID)?.biliTagId).toBeUndefined();
+  });
+
+  it('seedFromBilibili 建立的分组带 biliTagId', () => {
+    seedFromBilibili(rawTags, [up(1, [207542])]);
+    expect(loadGroups().find((g) => g.id === 'bili-207542')?.biliTagId).toBe(207542);
+  });
+
+  it('followings 引用了 tags 未列出的 tagid 时补建分组，不留脏引用', () => {
+    seedFromBilibili(rawTags, [up(1, null)]);
+    mergeImport(rawTags, [up(1, [777777])]);
+    const ids = new Set(loadGroups().map((g) => g.id));
+    for (const gid of loadMembership()['1'] ?? []) expect(ids.has(gid)).toBe(true);
+  });
+});
+
 // ── 读取容错 ────────────────────────────────────────────────────────────
 
 describe('读取容错', () => {

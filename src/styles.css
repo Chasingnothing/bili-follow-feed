@@ -576,3 +576,167 @@ html.bff-active body {
 .bff-batch-exit {
   margin-left: auto;
 }
+
+/* ── 提示条 ───────────────────────────────────────────────────────────── */
+
+.bff-warn,
+.bff-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 24px;
+  font-size: 13px;
+}
+.bff-warn {
+  background: rgba(255, 107, 107, 0.12);
+  color: #ff9a9a;
+}
+.bff-notice {
+  background: rgba(251, 114, 153, 0.12);
+  color: #fb7299;
+}
+.bff-warn button,
+.bff-notice button {
+  margin-left: auto;
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  color: inherit;
+  padding: 2px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* ── 分组管理菜单 ─────────────────────────────────────────────────────── */
+
+.bff-gmenu {
+  position: fixed;
+  z-index: 2147483600;
+  background: #232427;
+  border: 1px solid #3a3b3e;
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  max-height: 70vh;
+}
+.bff-gmenu-head {
+  padding: 8px 10px;
+  border-bottom: 1px solid #3a3b3e;
+  font-weight: 600;
+}
+.bff-gmenu-new {
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid #3a3b3e;
+}
+.bff-gmenu-new input,
+.bff-gmenu-rename input {
+  flex: 1;
+  min-width: 0;
+  background: #18191c;
+  color: #e3e5e7;
+  border: 1px solid #3a3b3e;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+.bff-gmenu-new button,
+.bff-gmenu-rename button {
+  flex: none;
+  background: #2b2c2f;
+  color: #e3e5e7;
+  border: 1px solid #3a3b3e;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.bff-gmenu-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.bff-gmenu-none {
+  padding: 10px;
+  color: #6a6d73;
+  font-size: 12px;
+}
+.bff-gmenu-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 6px 3px 10px;
+}
+.bff-gmenu-row:hover {
+  background: #2b2c2f;
+}
+.bff-gmenu-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bff-gmenu-row button {
+  background: none;
+  border: none;
+  color: #9499a0;
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 12px;
+}
+.bff-gmenu-row button:hover:not(:disabled) {
+  color: #fb7299;
+}
+.bff-gmenu-row button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.bff-gmenu-rename {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+.bff-gmenu-foot {
+  border-top: 1px solid #3a3b3e;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.bff-gmenu-usage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #9499a0;
+}
+.bff-gmenu-usage button {
+  margin-left: auto;
+  background: none;
+  border: 1px solid #3a3b3e;
+  border-radius: 4px;
+  color: #c9ccd1;
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.bff-gmenu-usage button:hover {
+  border-color: #fb7299;
+  color: #fb7299;
+}
+.bff-danger {
+  background: rgba(255, 107, 107, 0.1);
+  border: 1px solid rgba(255, 107, 107, 0.45);
+  color: #ff9a9a;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.bff-danger:hover {
+  background: rgba(255, 107, 107, 0.18);
+}

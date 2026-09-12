@@ -57,7 +57,12 @@ export async function fetchFollowings(vmid: number, pn: number): Promise<Trimmed
   }));
 }
 
-/** 关注总数，用于分页终止判断 */
+/**
+ * 关注总数。
+ *
+ * 目前无人调用 —— 分页改为「某页返回不足一页即终止」，比先查 total 少一次请求。
+ * 保留它是因为 B站 可能返回恰好整页的边界情况，届时需要用它做二次确认。
+ */
 export async function fetchFollowingsTotal(vmid: number): Promise<number> {
   const params = new URLSearchParams({ vmid: String(vmid), pn: '1', ps: '1' });
   const res = await fetch(`${API}/x/relation/followings?${params.toString()}`, {

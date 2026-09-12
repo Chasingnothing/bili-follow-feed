@@ -10,7 +10,7 @@ export default defineConfig({
       userscript: {
         name: 'B站 只看关注',
         namespace: 'local.bili-follow-feed',
-        version: '0.2.0',
+        version: '0.3.0',
         description: '只显示已关注 UP 主的视频投稿',
         // 收窄到单一路径，其他 B站 页面完全不加载本脚本。
         // 2026-09-11 实测：B站 对该未知路径不重定向也不改写 URL，只在原地址渲染 404 页。

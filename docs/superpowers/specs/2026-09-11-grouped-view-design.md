@@ -41,11 +41,15 @@
 |---|---|---|---|
 | `bff:groups` | `Group[]` | 随分组数 | 用户自建，天然有界 |
 | `bff:membership` | `Record<string, string[]>` | **随历史关注过的 UP 数**（取关后刻意保留） | 不设上限：单条约 38 字符，十年极端 churn 也仅 +126 KB |
-| `bff:upIndex` | `Record<string, UpInfo>` | 仅随**当前**关注数 | 每次刷新按当前关注列表**重建**，自动清理已取关者的头像 |
 | `bff:followingsCache` | `{ at, list: TrimmedFollowedUp[], tags }` | 随当前关注数 | 只存裁剪字段（见 §15.1） |
 | `bff:biliSnapshot` | `Record<string, number[]>` | 随历史关注过的 UP 数 | 同 membership；可由「清理历史数据」批量清理 |
 | `bff:schemaVersion` | `number` | 固定 | — |
-| `bff:collapsedGroups` | `string[]` | 随分组数 | 天然有界 |
+| `bff:collapsedGroups` | `string[]` | 随分组数 | **侧边栏**分组的折叠状态，天然有界 |
+| `bff:collapsedSections` | `string[]` | 随分组数 | **主视图**板块的折叠状态，与侧边栏**互相独立** |
+
+> **实现时的一处简化**：原设计里的 `bff:upIndex` 已**取消**。侧边栏需要的名字与头像
+> 直接由内存中的 `followingsCache.list` 计算得出（`buildUpIndex`），不额外落一份 ——
+> 少一个派生缓存，就少一类"两份数据各自漂移"的 bug。
 
 复用热身版已有的 `bff:readVideos`、`bff:lastVisitAt`。**其中 `bff:readVideos` 是唯一无上限增长项**，必须封顶 —— 见 §15.2。
 

@@ -491,6 +491,8 @@ html.bff-active body {
   margin-bottom: 4px;
   /* 翻页后滚回板块顶部时，给吸顶工具条留出空间，别把标题顶到它下面 */
   scroll-margin-top: 60px;
+  /* 插入线用绝对定位伪元素，需要定位上下文 */
+  position: relative;
 }
 /* 标题是容器而不是按钮 —— 里面还有拖动柄和 ↑/↓，按钮套按钮是非法 HTML */
 .bff-section-head {
@@ -566,17 +568,46 @@ html.bff-active body {
 .bff-section.is-dragging {
   opacity: 0.4;
 }
-/* 落点提示：板块边界上的插入线 + 整个目标板块的描边。
-   用 inset 阴影画，不占布局所以不会引起抖动 */
-.bff-section.drop-before {
-  box-shadow:
-    inset 0 3px 0 #fb7299,
-    inset 0 0 0 1px rgba(251, 114, 153, 0.45);
+
+/*
+ * 落点提示。**必须用伪元素，不能用 inset box-shadow。**
+ *
+ * CSS 绘制顺序是「元素背景（含 inset 阴影）→ 子元素」，而板块的子元素
+ * `.bff-section-head` 背景不透明、又正好铺在顶部 —— 会把提示整个盖住。
+ * 板块收起时整个板块就等于那条标题，于是提示完全不可见（这正是上一版的 bug）。
+ * 伪元素属于子元素层，画在标题之上，不会被盖。
+ */
+.bff-section.drop-before::before,
+.bff-section.drop-after::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 5px;
+  border-radius: 3px;
+  background: #fb7299;
+  box-shadow: 0 0 10px rgba(251, 114, 153, 0.9);
+  pointer-events: none;
+  z-index: 3;
 }
-.bff-section.drop-after {
-  box-shadow:
-    inset 0 -3px 0 #fb7299,
-    inset 0 0 0 1px rgba(251, 114, 153, 0.45);
+/* 落在板块之间的 4px 间隙里，视觉上就是"插到这两块之间" */
+.bff-section.drop-before::before {
+  top: -4px;
+}
+.bff-section.drop-after::after {
+  bottom: -4px;
+}
+
+/* 目标高亮画在标题上 —— 标题在子元素层，一定可见 */
+.bff-section.drop-before .bff-section-head,
+.bff-section.drop-after .bff-section-head {
+  background: rgba(251, 114, 153, 0.18);
+  box-shadow: inset 0 0 0 1px #fb7299;
+}
+/* 标题里的按钮平时有自己的 hover 底色，拖动时要让位给高亮 */
+.bff-section.drop-before .bff-section-toggle,
+.bff-section.drop-after .bff-section-toggle {
+  background: transparent;
 }
 .bff-section-name {
   font-weight: 600;

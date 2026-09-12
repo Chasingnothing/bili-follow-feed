@@ -201,39 +201,89 @@ html.bff-active body {
   z-index: 2147483400;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: 6px;
+  padding: 6px 8px;
   background: #232427;
   border: 1px solid #3a3b3e;
   border-radius: 10px;
   box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
   font-size: 12px;
+  user-select: none;
 }
-/* 批量操作条在底部居中，悬浮条上移让位 */
-.bff-loadmore--raised {
-  bottom: 76px;
+.bff-loadmore.is-dragging {
+  border-color: #fb7299;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.65);
 }
-.bff-loadmore-count {
+.bff-loadmore-handle {
+  cursor: grab;
   color: #9499a0;
   white-space: nowrap;
+  padding: 4px 6px;
+  border-radius: 6px;
+  /* 触摸设备上不加这句，拖动会被页面滚动吃掉 */
+  touch-action: none;
+}
+.bff-loadmore.is-dragging .bff-loadmore-handle {
+  cursor: grabbing;
+}
+.bff-loadmore-handle:hover {
+  background: #2b2c2f;
+  color: #c9ccd1;
 }
 .bff-loadmore-progress {
   color: #4fc3f7;
   white-space: nowrap;
+  padding: 0 8px;
 }
-.bff-loadmore select {
+.bff-loadmore-go,
+.bff-loadmore-caret {
   background: #2b2c2f;
   color: #e3e5e7;
   border: 1px solid #3a3b3e;
   border-radius: 6px;
-  padding: 5px 8px;
+  padding: 5px 10px;
   font-size: 12px;
   cursor: pointer;
   font-family: inherit;
 }
-.bff-loadmore select:disabled {
+.bff-loadmore-caret {
+  padding: 5px 8px;
+}
+.bff-loadmore-go:hover:not(:disabled),
+.bff-loadmore-caret:hover:not(:disabled) {
+  background: #35363a;
+}
+.bff-loadmore-go:disabled,
+.bff-loadmore-caret:disabled {
   opacity: 0.5;
   cursor: default;
+}
+.bff-loadmore-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  display: flex;
+  flex-direction: column;
+  min-width: 112px;
+  background: #232427;
+  border: 1px solid #3a3b3e;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+.bff-loadmore-menu button {
+  background: none;
+  border: none;
+  color: #c9ccd1;
+  text-align: left;
+  padding: 7px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.bff-loadmore-menu button:hover {
+  background: #2b2c2f;
+  color: #fb7299;
 }
 
 /* ── 侧边栏 ───────────────────────────────────────────────────────────── */

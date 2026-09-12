@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "tsc --noEmit && vitest run",
+    "test:watch": "vitest",
+    "verify": "npm run test && npm run build"
   },
   "dependencies": {
     "react": "^19.3.0",

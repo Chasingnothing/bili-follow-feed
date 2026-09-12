@@ -62,8 +62,15 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 离开页面时记录访问时间，供下次标记「NEW」
-  useEffect(() => () => saveLastVisit(Date.now()), []);
+  // 离开页面时记录访问时间，供下次标记「NEW」。
+  // 注意 cleanup 必须返回 void —— saveLastVisit 现在返回 boolean（写入是否成功），
+  // 直接简写会让 cleanup 变成 () => boolean，React 的类型不接受。
+  useEffect(
+    () => () => {
+      saveLastVisit(Date.now());
+    },
+    [],
+  );
 
   const onOpen = useCallback((card: VideoCard) => {
     setReadSet(prev => {

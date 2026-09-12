@@ -10,6 +10,7 @@ import {
   saveLastVisit,
 } from './lib/readState';
 import VideoGrid from './components/VideoGrid';
+import { BILIBILI_HOME } from './lib/route';
 import './styles.css';
 
 type SortKey = 'latest' | 'play';
@@ -111,6 +112,12 @@ export default function App() {
         <span className="bff-count">
           {visible.length} / {cards.length}
         </span>
+
+        {/* 我们接管后隐藏了整个 body，B站 404 页上的导航也没了，
+            所以必须自己提供一个出口 */}
+        <a className="bff-back" href={BILIBILI_HOME}>
+          返回 B站
+        </a>
       </div>
 
       {error && <div className="bff-empty">接口出错：{error}</div>}

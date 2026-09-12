@@ -54,6 +54,8 @@ type ViewMode = 'grouped' | 'flat';
 
 /** localStorage 的常见配额（Chrome 约 5 MB），仅用于「存储占用」展示 */
 const QUOTA_BYTES = 5 * 1024 * 1024;
+/** 平铺视图在页码表里的 key */
+const FLAT_KEY = '__flat__';
 
 export default function App() {
   const feed = useFeed();
@@ -81,6 +83,8 @@ export default function App() {
   );
   const [picker, setPicker] = useState<{ mid: number; name: string; anchor: DOMRect } | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<DOMRect | null>(null);
+  /** 每个板块 / 平铺视图各自的页码，1-based。key 为 groupId（平铺用 FLAT_KEY） */
+  const [pages, setPages] = useState<Record<string, number>>({});
 
   const lastVisit = useRef(loadLastVisit()).current;
   const collapseSeeded = useRef(false);
@@ -169,6 +173,15 @@ export default function App() {
       return next;
     });
   }, []);
+
+  const setPage = useCallback((key: string, page: number) => {
+    setPages((prev) => ({ ...prev, [key]: page }));
+  }, []);
+
+  // 排序 / 筛选 / 时间窗变了之后，原来的页码指向的内容已经不是同一批，全部回到第 1 页
+  useEffect(() => {
+    setPages({});
+  }, [sort, filter, feed.windowHours]);
 
   // ── 批量分类 ──────────────────────────────────────────────────────────
 
@@ -463,7 +476,14 @@ export default function App() {
         {feed.error && <div className="bff-empty">接口出错：{feed.error}</div>}
 
         {!feed.error && view === 'flat' && (
-          <VideoGrid cards={visibleFlat} readSet={readSet} lastVisit={lastVisit} onOpen={onOpen} />
+          <VideoGrid
+            cards={visibleFlat}
+            readSet={readSet}
+            lastVisit={lastVisit}
+            onOpen={onOpen}
+            page={pages[FLAT_KEY] ?? 1}
+            onPageChange={(p) => setPage(FLAT_KEY, p)}
+          />
         )}
 
         {!feed.error &&
@@ -477,8 +497,10 @@ export default function App() {
               lastVisit={lastVisit}
               collapsed={collapsedSections.has(s.group.id)}
               videoCountBeforeFilter={sectionTotals.get(s.group.id) ?? 0}
+              page={pages[s.group.id] ?? 1}
               onToggle={toggleSection}
               onOpen={onOpen}
+              onPageChange={(p) => setPage(s.group.id, p)}
             />
           ))}
 

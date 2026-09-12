@@ -9,8 +9,11 @@ interface Props {
   lastVisit: number;
   collapsed: boolean;
   videoCountBeforeFilter: number;
+  /** 本板块当前页码，1-based */
+  page: number;
   onToggle: (groupId: string) => void;
   onOpen: (card: VideoCard) => void;
+  onPageChange: (page: number) => void;
 }
 
 /**
@@ -18,6 +21,8 @@ interface Props {
  *
  * 空板块**不隐藏** —— 直接过滤掉会让用户以为分组丢了。显示明确占位即可，
  * 折叠状态由上层持久化（空板块默认折叠，见 App 的初始化逻辑）。
+ *
+ * 分页状态与折叠状态一样由上层持有：板块只是展示，不自己记状态。
  */
 export default function GroupSection({
   group,
@@ -26,8 +31,10 @@ export default function GroupSection({
   lastVisit,
   collapsed,
   videoCountBeforeFilter,
+  page,
   onToggle,
   onOpen,
+  onPageChange,
 }: Props) {
   const filteredOut = videoCountBeforeFilter - videos.length;
 
@@ -54,7 +61,14 @@ export default function GroupSection({
             {videoCountBeforeFilter === 0 ? '这个分组最近没有更新' : '当前筛选下没有内容'}
           </div>
         ) : (
-          <VideoGrid cards={videos} readSet={readSet} lastVisit={lastVisit} onOpen={onOpen} />
+          <VideoGrid
+            cards={videos}
+            readSet={readSet}
+            lastVisit={lastVisit}
+            page={page}
+            onPageChange={onPageChange}
+            onOpen={onOpen}
+          />
         ))}
     </section>
   );

@@ -799,3 +799,54 @@ html.bff-active body {
   background: rgba(255, 193, 7, 0.12);
   color: #ffc107;
 }
+
+/* ── 页码条 ───────────────────────────────────────────────────────────── */
+
+.bff-pager {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 24px 20px;
+  flex-wrap: wrap;
+}
+.bff-pager-range {
+  font-size: 12px;
+  color: #9499a0;
+}
+.bff-pager-tabs {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+.bff-pager-tabs button {
+  min-width: 30px;
+  height: 28px;
+  padding: 0 8px;
+  background: #2b2c2f;
+  color: #e3e5e7;
+  border: 1px solid #3a3b3e;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.bff-pager-tabs button:hover:not(:disabled):not(.is-on) {
+  background: #35363a;
+}
+.bff-pager-tabs button.is-on {
+  background: #fb7299;
+  border-color: #fb7299;
+  color: #fff;
+  cursor: default;
+}
+.bff-pager-tabs button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.bff-pager-gap {
+  color: #6a6d73;
+  padding: 0 2px;
+  font-size: 12px;
+}

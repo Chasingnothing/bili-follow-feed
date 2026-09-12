@@ -86,7 +86,11 @@ html.bff-active body {
   }
 }
 
+/* 卡片是容器，不是链接 —— 内部有两个并列链接（视频 / UP 主页） */
 .bff-card {
+  display: block;
+}
+.bff-card-main {
   display: block;
   text-decoration: none;
   color: inherit;
@@ -138,7 +142,7 @@ html.bff-active body {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.bff-card:hover .bff-title {
+.bff-card-main:hover .bff-title {
   color: #fb7299;
 }
 .bff-meta {
@@ -154,6 +158,17 @@ html.bff-active body {
   height: 18px;
   border-radius: 50%;
   flex: none;
+}
+.bff-card-up {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+}
+.bff-card-up:hover {
+  color: #fb7299;
 }
 .bff-up {
   overflow: hidden;

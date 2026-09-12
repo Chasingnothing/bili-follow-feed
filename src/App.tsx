@@ -17,6 +17,7 @@ import {
   pruneStale,
   renameGroup,
   reorderGroup,
+  reorderGroups,
   resetAllDiverged,
   resetFromBilibili,
   seedFromBilibili,
@@ -41,7 +42,7 @@ import {
   SECTION_COLLAPSED_KEY,
 } from './lib/uiState';
 import VideoGrid from './components/VideoGrid';
-import GroupSection from './components/GroupSection';
+import GroupSection, { type MoveApi } from './components/GroupSection';
 import Sidebar from './components/Sidebar';
 import GroupPicker from './components/GroupPicker';
 import GroupMenu from './components/GroupMenu';
@@ -87,6 +88,10 @@ export default function App() {
   const [menuAnchor, setMenuAnchor] = useState<DOMRect | null>(null);
   /** 每个板块 / 平铺视图各自的页码，1-based。key 为 groupId（平铺用 FLAT_KEY） */
   const [pages, setPages] = useState<Record<string, number>>({});
+  /** 正在被拖动的板块 id */
+  const [dragId, setDragId] = useState<string | null>(null);
+  /** 拖动悬停位置：落在哪个板块的上方还是下方 */
+  const [dropEdge, setDropEdge] = useState<{ id: string; edge: 'before' | 'after' } | null>(null);
 
   const lastVisit = useRef(loadLastVisit()).current;
   const collapseSeeded = useRef(false);
@@ -181,6 +186,61 @@ export default function App() {
   const setPage = useCallback((key: string, page: number) => {
     setPages((prev) => ({ ...prev, [key]: page }));
   }, []);
+
+  // ── 板块排序 ──────────────────────────────────────────────────────────
+
+  const resetDrag = useCallback(() => {
+    setDragId(null);
+    setDropEdge(null);
+  }, []);
+
+  const moveSection = useCallback(
+    (id: string, dir: -1 | 1) => {
+      reorderGroup(id, dir);
+      refreshLocal();
+    },
+    [refreshLocal],
+  );
+
+  /** 把正在拖的板块插到目标板块的前/后 */
+  const dropSection = useCallback(
+    (targetId: string, edge: 'before' | 'after') => {
+      const dragging = dragId;
+      resetDrag();
+      if (!dragging || dragging === targetId) return;
+
+      const ids = sections.map((s) => s.group.id);
+      const without = ids.filter((id) => id !== dragging);
+      let at = without.indexOf(targetId);
+      if (at < 0) return;
+      if (edge === 'after') at += 1;
+      without.splice(at, 0, dragging);
+
+      reorderGroups(without);
+      refreshLocal();
+    },
+    [dragId, sections, resetDrag, refreshLocal],
+  );
+
+  const moveApiFor = useCallback(
+    (id: string, index: number): MoveApi => ({
+      onMove: (dir) => moveSection(id, dir),
+      canMoveUp: index > 0,
+      canMoveDown: index < sections.length - 1,
+      dragging: dragId === id,
+      dropEdge: dropEdge?.id === id ? dropEdge.edge : null,
+      onDragStart: () => setDragId(id),
+      onDragOver: (edge) => {
+        if (dragId && dragId !== id) setDropEdge({ id, edge });
+      },
+      onDrop: () => {
+        if (dropEdge && dropEdge.id === id) dropSection(id, dropEdge.edge);
+        else resetDrag();
+      },
+      onDragEnd: resetDrag,
+    }),
+    [moveSection, sections.length, dragId, dropEdge, dropSection, resetDrag],
+  );
 
   // 排序 / 筛选 / 时间窗变了之后，原来的页码指向的内容已经不是同一批，全部回到第 1 页
   useEffect(() => {
@@ -497,7 +557,7 @@ export default function App() {
 
         {!feed.error &&
           view === 'grouped' &&
-          sections.map((s) => (
+          sections.map((s, idx) => (
             <GroupSection
               key={s.group.id}
               group={s.group}
@@ -507,6 +567,7 @@ export default function App() {
               collapsed={collapsedSections.has(s.group.id)}
               videoCountBeforeFilter={sectionTotals.get(s.group.id) ?? 0}
               page={pages[s.group.id] ?? 1}
+              move={moveApiFor(s.group.id, idx)}
               onToggle={toggleSection}
               onOpen={onOpen}
               onPageChange={(p) => setPage(s.group.id, p)}

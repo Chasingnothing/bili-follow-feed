@@ -8,6 +8,7 @@ import {
   renameGroup,
   deleteGroup,
   reorderGroup,
+  reorderGroups,
   applyBatch,
   undoLastBatch,
   acknowledgeDivergence,
@@ -184,26 +185,61 @@ describe('分组 CRUD', () => {
     expect(loadMembership()['3']).toEqual([SPECIAL_ID]);
   });
 
-  it('排序：上移下移只作用于自定义分组', () => {
+  it('上移下移可以移动任意分组（含系统分组）', () => {
     seedFromBilibili(rawTags, []);
     const before = loadGroups()
-      .filter((g) => g.kind === 'normal')
       .sort((a, b) => a.order - b.order)
       .map((g) => g.id);
+    expect(before[0]).toBe(SPECIAL_ID);
+
     expect(reorderGroup(before[1], -1)).toBe(true);
+
     const after = loadGroups()
-      .filter((g) => g.kind === 'normal')
       .sort((a, b) => a.order - b.order)
       .map((g) => g.id);
     expect(after[0]).toBe(before[1]);
+    expect(after[1]).toBe(before[0]);
   });
 
-  it('排序到边界时返回 false', () => {
+  it('排序到两端时返回 false', () => {
     seedFromBilibili(rawTags, []);
-    const first = loadGroups()
-      .filter((g) => g.kind === 'normal')
-      .sort((a, b) => a.order - b.order)[0];
-    expect(reorderGroup(first.id, -1)).toBe(false);
+    const ordered = loadGroups().sort((a, b) => a.order - b.order);
+    expect(reorderGroup(ordered[0].id, -1)).toBe(false);
+    expect(reorderGroup(ordered[ordered.length - 1].id, 1)).toBe(false);
+  });
+
+  it('reorderGroups 按给定顺序重写 order', () => {
+    seedFromBilibili(rawTags, []);
+    const ids = loadGroups()
+      .sort((a, b) => a.order - b.order)
+      .map((g) => g.id);
+    const flipped = [...ids].reverse();
+
+    expect(reorderGroups(flipped)).toBe(true);
+    expect(
+      loadGroups()
+        .sort((a, b) => a.order - b.order)
+        .map((g) => g.id),
+    ).toEqual(flipped);
+  });
+
+  it('reorderGroups 不会丢失没列进去的分组', () => {
+    seedFromBilibili(rawTags, []);
+    const ids = loadGroups().map((g) => g.id);
+    reorderGroups([ids[0]]); // 只列一个
+    expect(loadGroups()).toHaveLength(ids.length);
+  });
+
+  it('reorderGroups 之后 membership 不受影响', () => {
+    seedFromBilibili(rawTags, [up(1, [207542])]);
+    const before = JSON.stringify(loadMembership());
+    reorderGroups(
+      loadGroups()
+        .sort((a, b) => a.order - b.order)
+        .map((g) => g.id)
+        .reverse(),
+    );
+    expect(JSON.stringify(loadMembership())).toBe(before);
   });
 });
 

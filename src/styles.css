@@ -492,23 +492,83 @@ html.bff-active body {
   /* 翻页后滚回板块顶部时，给吸顶工具条留出空间，别把标题顶到它下面 */
   scroll-margin-top: 60px;
 }
+/* 标题是容器而不是按钮 —— 里面还有拖动柄和 ↑/↓，按钮套按钮是非法 HTML */
 .bff-section-head {
-  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 16px 6px 6px;
+  background: #1f2023;
+  border-bottom: 1px solid #2b2c2f;
+  font-size: 14px;
+}
+.bff-section-head:hover {
+  background: #232427;
+}
+/* 折叠按钮 + 标题 + 数量合成一个可点区域 */
+.bff-section-toggle {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 24px;
-  background: #1f2023;
+  padding: 4px 8px;
+  background: none;
   border: none;
-  border-bottom: 1px solid #2b2c2f;
   color: inherit;
   cursor: pointer;
   text-align: left;
   font-size: 14px;
   font-family: inherit;
+  border-radius: 6px;
 }
-.bff-section-head:hover {
-  background: #232427;
+.bff-section-toggle:hover {
+  background: #2b2c2f;
+}
+.bff-drag {
+  flex: none;
+  cursor: grab;
+  color: #6a6d73;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 14px;
+  user-select: none;
+}
+.bff-drag:hover {
+  color: #c9ccd1;
+  background: #2b2c2f;
+}
+.bff-drag:active {
+  cursor: grabbing;
+}
+.bff-mv {
+  flex: none;
+  background: none;
+  border: none;
+  color: #6a6d73;
+  cursor: pointer;
+  padding: 4px 7px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: inherit;
+}
+.bff-mv:hover:not(:disabled) {
+  color: #fb7299;
+  background: #2b2c2f;
+}
+.bff-mv:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+/* 拖动中的板块半透明；放置位置用 inset 阴影画线，不占布局所以不会抖 */
+.bff-section-head.is-dragging {
+  opacity: 0.45;
+}
+.bff-section-head.drop-before {
+  box-shadow: inset 0 3px 0 #fb7299;
+}
+.bff-section-head.drop-after {
+  box-shadow: inset 0 -3px 0 #fb7299;
 }
 .bff-section-name {
   font-weight: 600;

@@ -339,23 +339,41 @@ export function deleteGroup(id: string): boolean {
   return true;
 }
 
-/** 上移/下移。系统分组的 order 是固定的，不允许移动。 */
-export function reorderGroup(id: string, dir: -1 | 1): boolean {
+/**
+ * 按给定顺序重写全部分组的 `order`。拖拽排序与 ↑/↓ 都走这里。
+ *
+ * 传入的是**完整**的分组 id 顺序 —— 板块视图和侧边栏都按 `order` 排，
+ * 所以一次重写两边同步，不会出现"主区顺序和侧边栏不一致"。
+ */
+export function reorderGroups(orderedIds: string[]): boolean {
   const groups = loadGroups();
-  const movable = groups
-    .filter((g) => g.kind === 'normal')
-    .sort((a, b) => a.order - b.order);
-  const idx = movable.findIndex((g) => g.id === id);
-  if (idx < 0) return false;
-  const target = idx + dir;
-  if (target < 0 || target >= movable.length) return false;
-
-  const a = movable[idx];
-  const b = movable[target];
-  const tmp = a.order;
-  a.order = b.order;
-  b.order = tmp;
+  const rank = new Map(orderedIds.map((id, i) => [id, i]));
+  // 不在传入列表里的（理论上不该有）排到最后，但彼此不撞号
+  let fallback = ORDER_CUSTOM_START + orderedIds.length;
+  for (const g of groups) {
+    const r = rank.get(g.id);
+    g.order = r === undefined ? fallback++ : ORDER_CUSTOM_START + r;
+  }
   return saveGroups(groups);
+}
+
+/**
+ * 上移/下移一位。
+ *
+ * 现在**允许移动任意分组**（含「特别关注」「未分类」）—— 用户要的是排版权，
+ * 而 `special` 置顶本来只是初始默认值，不是不可变规则。
+ */
+export function reorderGroup(id: string, dir: -1 | 1): boolean {
+  const ordered = loadGroups()
+    .sort((a, b) => a.order - b.order)
+    .map((g) => g.id);
+
+  const i = ordered.indexOf(id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= ordered.length) return false;
+
+  [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
+  return reorderGroups(ordered);
 }
 
 // ── 批量分类 ────────────────────────────────────────────────────────────

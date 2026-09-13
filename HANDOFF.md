@@ -14,7 +14,7 @@
 | **在哪** | `E:\ds\bili-follow-feed`（git 仓库，**无远程**） |
 | **当前版本** | `main` = **v0.8.2**，263 个测试，构建通过 |
 | **入口** | `https://www.bilibili.com/agent-feed`（用户脚本 `@match` 收窄到这一个路径） |
-| **产物** | `dist/bili-follow-feed.user.js` —— **279,852 字节 / 20 行**（压缩后，gzip 约 87 KB），装进 Tampermonkey |
+| **产物** | `dist/bili-follow-feed.user.js` —— **279,852 字节 / 21 行**（压缩后，gzip 约 87 KB），装进 Tampermonkey |
 | **技术栈** | TypeScript · React 19 · Vite 8 · vite-plugin-monkey · Vitest 5（jsdom） |
 | **核心承诺** | **不碰 B站 账号**。只读接口 + 本地存储，零凭据落地 |
 
@@ -97,6 +97,27 @@ npm run build                    # 重建 dist，避免误装 0.9.0
 | **`npx vitest` / `npm run build` 必须全权限** | workspace-write 下 Vite 在**配置加载阶段**就崩（`windowsSafeRealPathSync`） |
 | **`git add` 的行尾转换会改写工作区文件** | 已加 `.gitattributes`（`* -text`）止住 |
 | 已持久化的用户环境变量 | `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` / `PYTHONUTF8=1` |
+
+### ⚠️ 数行数/读文本别用 `Get-Content`
+
+源文件是 **UTF-8 无 BOM + 纯 LF**。Windows PowerShell 5.1 的 `Get-Content` 默认按**系统 ANSI（中文 Windows = GBK）**解码，中文变乱码，而乱码解码会**吞掉换行把两行并成一行** —— 于是它**静默少数行**，不报错：
+
+| 文件 | `Get-Content` | **真实行数** |
+|---|---|---|
+| `useFeed.ts` | 299 | **315** |
+| `App.tsx` | 686 | **698** |
+| `localGroups.ts` | 533 | **573** |
+
+**正确做法**（三选一）：
+
+```powershell
+[System.IO.File]::ReadAllLines($absPath).Count    # 注意必须绝对路径
+Get-Content -Encoding UTF8 $path | Measure-Object -Line   # 注意：这会跳过空行
+```
+
+或直接用 harness 的 `read` 工具（它会报 "of N lines"，权威）。
+
+**踩过**：我拿 `Get-Content` 当尺子去"校正"凭记忆写的行号，结果**把本来正确的一整套数字改错了**。凡是用于文档/交接的数字，都要用上面这几种方式之一复核。
 | `tsc` 的 `noUnusedLocals` 开着 | 测试文件里未使用的 import 会导致构建失败 |
 
 ### 每次跑命令的标准开场白
@@ -125,26 +146,26 @@ $code = $LASTEXITCODE
 
 | 文件 | 行 | 作用 |
 |---|---|---|
-| `source.ts` | 10 | **`FeedDataSource` 接口** —— UI 层唯一认识的数据契约，是"换数据源不动 UI"的关键接缝 |
-| `inPage.ts` | 54 | 站内实现：`fetchPage()` = 全局动态流；`parseFeedPage()` 共用解析 |
-| `relation.ts` | 71 | 只读关系接口：`fetchSelf`（取自己 mid）、`fetchTags`（分组）、`fetchFollowings`（关注列表，**边界处裁剪字段**） |
-| `__fixtures__/relation.ts` | 48 | 关注列表/分组的真实结构 fixture（含三个陷阱） |
+| `source.ts` | 13 | **`FeedDataSource` 接口** —— UI 层唯一认识的数据契约，是"换数据源不动 UI"的关键接缝 |
+| `inPage.ts` | 58 | 站内实现：`fetchPage()` = 全局动态流；`parseFeedPage()` 共用解析 |
+| `relation.ts` | 76 | 只读关系接口：`fetchSelf`（取自己 mid）、`fetchTags`（分组）、`fetchFollowings`（关注列表，**边界处裁剪字段**） |
+| `__fixtures__/relation.ts` | 51 | 关注列表/分组的真实结构 fixture（含三个陷阱） |
 
 ### 纯逻辑 `src/lib/`（重点，测试都在这里）
 
 | 文件 | 行 | 作用 | 为什么不明显 |
 |---|---|---|---|
-| `mapDynamic.ts` | 59 | **动态流 item → VideoCard** | 处理**三个实测陷阱**：`stat.play` 是字符串、`cover` 是 `http://`、时间在 `module_author.pub_ts` 而**不是** `archive.pubdate` |
-| `localGroups.ts` | 533 | **本地分组 + 归属 + 批量 + 分歧 + 导入** | 全项目最复杂的逻辑，见 §5 |
-| `feedWindow.ts` | 124 | 翻页编排：`fillToCutoff`（补齐到时间窗）、`fetchNewer`（增量刷新） | **纯函数 + 依赖注入**，所以能测 |
-| `grouping.ts` | 40 | `buildSections`：视频按 UP 的本地分组切成分区 | 多归属的 UP 在每个板块都出现 |
-| `storage.ts` | 58 | `readJson` / `writeJson`（**返回是否成功**）/ `bffUsage` | 损坏数据回落默认值，绝不白屏 |
-| `readState.ts` | 49 | 已读集合 + 上次访问时间 | `readVideos` **封顶 3000 条**（唯一会无限增长的键） |
-| `upIndex.ts` | 52 | B站 tagid → 本地分组 id 映射；`SPECIAL_ID` / `UNCATEGORIZED_ID` / `HIDDEN_ID` | `biliGroupIdsOf` 有可选的 **`resolve` 参数**，见 §5 |
-| `pagination.ts` | 58 | 每页 20 条；页码折叠（`1 2 … 23`） | |
-| `popover.ts` | 76 | 浮层定位：优先下方 → 上方 → 压缩高度 | 修的是"**拍一个固定数字**"的定位 |
-| `format.ts` | 23 | 播放量（1.2万）/ 相对时间 | `formatRelativeTime` 收**毫秒**，而 `VideoCard.pubdate` 是**秒**，调用处须 ×1000 |
-| `route.ts` | 15 | 入口路径判定 `isFeedPath` | |
+| `mapDynamic.ts` | 64 | **动态流 item → VideoCard** | 处理**三个实测陷阱**：`stat.play` 是字符串、`cover` 是 `http://`、时间在 `module_author.pub_ts` 而**不是** `archive.pubdate` |
+| `localGroups.ts` | 573 | **本地分组 + 归属 + 批量 + 分歧 + 导入** | 全项目最复杂的逻辑，见 §5 |
+| `feedWindow.ts` | 133 | 翻页编排：`fillToCutoff`（补齐到时间窗）、`fetchNewer`（增量刷新） | **纯函数 + 依赖注入**，所以能测 |
+| `grouping.ts` | 44 | `buildSections`：视频按 UP 的本地分组切成分区 | 多归属的 UP 在每个板块都出现 |
+| `storage.ts` | 64 | `readJson` / `writeJson`（**返回是否成功**）/ `bffUsage` | 损坏数据回落默认值，绝不白屏 |
+| `readState.ts` | 57 | 已读集合 + 上次访问时间 | `readVideos` **封顶 3000 条**（唯一会无限增长的键） |
+| `upIndex.ts` | 60 | B站 tagid → 本地分组 id 映射；`SPECIAL_ID` / `UNCATEGORIZED_ID` / `HIDDEN_ID` | `biliGroupIdsOf` 有可选的 **`resolve` 参数**，见 §5 |
+| `pagination.ts` | 60 | 每页 20 条；页码折叠（`1 2 … 23`） | |
+| `popover.ts` | 84 | 浮层定位：优先下方 → 上方 → 压缩高度 | 修的是"**拍一个固定数字**"的定位 |
+| `format.ts` | 25 | 播放量（1.2万）/ 相对时间 | `formatRelativeTime` 收**毫秒**，而 `VideoCard.pubdate` 是**秒**，调用处须 ×1000 |
+| `route.ts` | 20 | 入口路径判定 `isFeedPath` | |
 | `links.ts` | 4 | `upSpaceUrl(mid)` | 三处共用 |
 | `uiState.ts` | 24 | 侧边栏分组 / 主视图板块的折叠状态 | **两个键互相独立** |
 
@@ -152,27 +173,27 @@ $code = $LASTEXITCODE
 
 | 文件 | 行 | 作用 |
 |---|---|---|
-| `hooks/useFeed.ts` | 299 | 动态流：首屏秒出 → 后台补齐 → 增量刷新 → 手动续翻 |
-| `hooks/useFollowings.ts` | 112 | 关注列表 + B站 分组，带缓存与首次导入 |
-| `hooks/usePopoverPosition.ts` | 43 | 用 `useLayoutEffect` 在**绘制前**算好浮层位置（无闪烁） |
-| `hooks/useScrollToTopOnPage.ts` | 21 | 翻页后把板块滚回顶部（用 tick + effect，因为 React 会合并状态更新） |
-| `components/Sidebar.tsx` | 225 | 侧边栏：分组树 + 搜索 + 批量模式 + 每 UP 的「⋯」 |
-| `components/GroupSection.tsx` | 160 | 板块壳：折叠 + 拖动 + ↑↓ + 空占位 |
-| `components/VideoGrid.tsx` | 54 | 卡片网格 + 分页（每页 20） |
-| `components/VideoCard.tsx` | 71 | 单卡：**两个并列的 `<a>`**（视频 / UP 主页）+ 「⋯」（见 §5） |
-| `components/BatchGroupPanel.tsx` | 75 | 批量模式顶部的分组图标（一次点击归类） |
-| `components/BatchBar.tsx` | 83 | 底部批量条（移出/仅属于/移出全部/撤销/退出） |
-| `components/GroupPicker.tsx` | 136 | 单个 UP 的分组勾选菜单 |
-| `components/GroupMenu.tsx` | 170 | 「分组 ⋯」：建/改名/删/排序/存储占用/强制覆盖 |
-| `components/LoadMoreBar.tsx` | 206 | 右下角**可拖动**的加载条 + 页数菜单 |
-| `components/Pager.tsx` | 82 | 页码：范围 + 居中的页码 + 跳转框 |
-| `App.tsx` | **686** | ⚠️ 偏大，见 §10 |
-| `main.tsx` | 49 | 挂载/卸载、`bff-active`、MutationObserver 重挂保护 |
-| `types.ts` | 62 | `VideoCard` / `FeedPage` / `BiliTag` / `TrimmedFollowedUp` / `SelfInfo` / `UpInfo` |
-| `styles.css` | 1153 | 深色主题，全部 `.bff-*` 类 |
+| `hooks/useFeed.ts` | 315 | 动态流：首屏秒出 → 后台补齐 → 增量刷新 → 手动续翻 |
+| `hooks/useFollowings.ts` | 115 | 关注列表 + B站 分组，带缓存与首次导入 |
+| `hooks/usePopoverPosition.ts` | 48 | 用 `useLayoutEffect` 在**绘制前**算好浮层位置（无闪烁） |
+| `hooks/useScrollToTopOnPage.ts` | 26 | 翻页后把板块滚回顶部（用 tick + effect，因为 React 会合并状态更新） |
+| `components/Sidebar.tsx` | 230 | 侧边栏：分组树 + 搜索 + 批量模式 + 每 UP 的「⋯」 |
+| `components/GroupSection.tsx` | 172 | 板块壳：折叠 + 拖动 + ↑↓ + 空占位 |
+| `components/VideoGrid.tsx` | 57 | 卡片网格 + 分页（每页 20） |
+| `components/VideoCard.tsx` | 76 | 单卡：**两个并列的 `<a>`**（视频 / UP 主页）+ 「⋯」（见 §5） |
+| `components/BatchGroupPanel.tsx` | 83 | 批量模式顶部的分组图标（一次点击归类） |
+| `components/BatchBar.tsx` | 88 | 底部批量条（移出/仅属于/移出全部/撤销/退出） |
+| `components/GroupPicker.tsx` | 140 | 单个 UP 的分组勾选菜单 |
+| `components/GroupMenu.tsx` | 177 | 「分组 ⋯」：建/改名/删/排序/存储占用/强制覆盖 |
+| `components/LoadMoreBar.tsx` | 214 | 右下角**可拖动**的加载条 + 页数菜单 |
+| `components/Pager.tsx` | 91 | 页码：范围 + 居中的页码 + 跳转框 |
+| `App.tsx` | **698** | ⚠️ 偏大，见 §10 |
+| `main.tsx` | 54 | 挂载/卸载、`bff-active`、MutationObserver 重挂保护 |
+| `types.ts` | 71 | `VideoCard` / `FeedPage` / `BiliTag` / `TrimmedFollowedUp` / `SelfInfo` / `UpInfo` |
+| `styles.css` | 1159 | 深色主题，全部 `.bff-*` 类 |
 
-> **测试与 fixture**（15 个 `*.test.ts`）：体量最大的是 `localGroups.test.ts`（692 行）、`feedWindow.test.ts`（408 行）—— 测试量集中在最难的两块纯逻辑上，分布是对的。
-> fixture 在 `lib/__fixtures__/items.ts`（44）和 `data/__fixtures__/relation.ts`（48），**都是从真实响应抄下来的**。
+> **测试与 fixture**（15 个 `*.test.ts`）：体量最大的是 `localGroups.test.ts`（705 行）、`feedWindow.test.ts`（408 行）—— 测试量集中在最难的两块纯逻辑上，分布是对的。
+> fixture 在 `lib/__fixtures__/items.ts`（47）和 `data/__fixtures__/relation.ts`（51），**都是从真实响应抄下来的**。
 
 ### 文档 `docs/`
 
@@ -192,7 +213,7 @@ $code = $LASTEXITCODE
 
 **历史上踩过**：v0.1.x 用 hash（`#/my-feed`），`@match` 是全站，导致每个 B站 页面都要解析 228KB。而且旧版靠 `hashchange` 判断"用户是否离开"，**B站 有权改写 hash** → 会静默把页面还回去。迁到路径后该逻辑整个删掉。
 
-### ② `danger-full-access`… 不，是"接管后隐藏 body"
+### ② 接管页面：隐藏原生 body
 
 `html.bff-active body { display: none }`，挂载点挂在 `document.documentElement` 下（因为 `@run-at document-start` 时 `document.body` 还不存在）。
 
@@ -307,6 +328,27 @@ $code = $LASTEXITCODE
 | `bff:loadMorePos` | 悬浮加载条被拖到哪 | |
 | `bff:schemaVersion` | ⚠️ **写了但从未被调用** | 见 §5⑨ |
 
+### 实测体积（真实 fixture 卡片 = **391 UTF-16 单元/张**）
+
+| 键 | 最坏情况 | 体积 | 占预算 |
+|---|---|---|---|
+| `bff:feedCache` | 600 张 | 0.22 MiB | 9% |
+| `bff:upVideoCache`（分支） | 300 UP × 20 张 = **6000 张** | **2.26 MiB** | **90%** |
+| `bff:followingsCache` | 281 UP | 0.04 MiB | 2% |
+| `bff:readVideos` | 3000 bvid | 0.04 MiB | 2% |
+| **合计** | | **2.56 MiB** | **≈102%** ⚠️ |
+
+预算按 Chrome 的 5 MiB、每字符 2 字节 = 2,621,440 单元计算。
+
+> **结论：按分支现在的上限，最坏情况会超出配额。** 而 `upVideoCache` 里**有 44% 是冗余** ——
+> 它本来就以 `mid` 为 key，却还在每张卡里重复存 `upMid` / `upName` / `upFace`，而 `url` 也能由 `bvid` 直接拼出。
+
+| 方案 | 6000 张体积 | 占预算 |
+|---|---|---|
+| 现状（完整卡片，20 张/UP） | 2.26 MiB | 90% |
+| 卡片瘦身（去掉那 4 个字段，单张 391→218 单元） | 1.26 MiB | 50% |
+| 瘦身 + 每 UP 只留 12 张（正好一页） | 0.75 MiB | **30%** |
+
 **写入失败会返回 `false`**，界面出提示 —— 不再静默吞掉（否则配额满时已读状态会悄悄停止保存）。
 
 ---
@@ -334,7 +376,7 @@ Tampermonkey 显示 **Reinstall**（不是 Update）是正常的 —— 从本�
 
 **改行为必须升版本号** —— 用户判断"新版装上没有"的唯一依据就是 Tampermonkey 面板里的版本号。（踩过：修了 bug 没升版本，用户看不出区别。）
 
-**构建自检一行**：`dist` 应该只有 **20 行**左右。如果变成一万多行，说明**压缩配置失效了**（踩过：Vite 8 / Rolldown 默认不压缩，588 KB）。副作用是 Tampermonkey 的编辑器要去渲染一万多行 → **用户以为"电脑卡住了"**。
+**构建自检一行**：`dist` 应该只有 **21 行**左右。如果变成一万多行，说明**压缩配置失效了**（踩过：Vite 8 / Rolldown 默认不压缩，588 KB）。副作用是 Tampermonkey 的编辑器要去渲染一万多行 → **用户以为"电脑卡住了"**。
 
 ### 测试策略
 
@@ -378,7 +420,7 @@ Tampermonkey 显示 **Reinstall**（不是 Update）是正常的 —— 从本�
 | **和 B站 红点是两套** | 在我们的页面点击**不会**消除 B站 首页的红点；反之亦然（我们从不写 B站） |
 | **「NEW」是近似** | 用时间戳比（`pubdate > lastVisitAt`），不是真正的"未读" |
 | **跨平台需要重构** | 见 §10。约 70% 代码平台无关，但 `bvid`/`upMid`/`url` 写死了 B站 概念 |
-| `App.tsx` 686 行 | 偏大，该拆 hooks |
+| `App.tsx` 698 行 | 偏大，该拆 hooks |
 
 ---
 
@@ -409,7 +451,7 @@ Tampermonkey 显示 **Reinstall**（不是 Update）是正常的 —— 从本�
 
 - `App.tsx` 拆 hooks
 - `bff:schemaVersion` 要么接上、要么删掉（现在是空转）
-- `.bff-picker` / `.bff-gmenu` 的定位已抽成共用 hook，但 CSS 仍集中在一个 `styles.css`（1153 行，可拆）
+- `.bff-picker` / `.bff-gmenu` 的定位已抽成共用 hook，但 CSS 仍集中在一个 `styles.css`（1159 行，可拆）
 
 ---
 

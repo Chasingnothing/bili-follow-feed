@@ -43,10 +43,10 @@ afterEach(() => {
 const now = () => nowMs;
 const noopSleep = () => Promise.resolve();
 
-function mountFeed(overrides: Partial<FeedDeps> = {}): () => FeedApi {
+function mountFeed(overrides: Partial<FeedDeps> = {}, enabled = true): () => FeedApi {
   const box: { api: FeedApi | null } = { api: null };
   function Probe() {
-    box.api = useFeed(overrides);
+    box.api = useFeed(overrides, enabled);
     return null;
   }
   act(() => {
@@ -55,6 +55,32 @@ function mountFeed(overrides: Partial<FeedDeps> = {}): () => FeedApi {
   return () => {
     if (!box.api) throw new Error('hook 还没挂载');
     return box.api;
+  };
+}
+
+/** `enabled` 可以中途改的版本 —— 用来测"切回动态流才开始加载" */
+function mountToggleable(overrides: Partial<FeedDeps> = {}, initiallyEnabled = false) {
+  const state = { enabled: initiallyEnabled };
+  const box: { api: FeedApi | null } = { api: null };
+  function Probe() {
+    box.api = useFeed(overrides, state.enabled);
+    return null;
+  }
+  const render = () => {
+    act(() => {
+      root.render(<Probe />);
+    });
+  };
+  render();
+  return {
+    api: () => {
+      if (!box.api) throw new Error('hook 还没挂载');
+      return box.api;
+    },
+    setEnabled: (v: boolean) => {
+      state.enabled = v;
+      render();
+    },
   };
 }
 
@@ -158,6 +184,40 @@ const HOUR_S = 3600;
 // ── A. 冷启动完整加载 ───────────────────────────────────────────────────
 
 describe('A. 冷启动', () => {
+  it('enabled=false 时一个请求都不发（模式 2 用不到动态流）', async () => {
+    const { source, calls } = sourceFrom(scriptedPages(3, 5, nowSec(), 4000));
+    const feed = mountFeed(quick({ source }), false);
+
+    await settle();
+
+    expect(calls).toEqual([]);
+    expect(feed().cards).toEqual([]);
+  });
+
+  it('enabled 从 false 变 true 时才开始加载（切回动态流）', async () => {
+    const { source, calls } = sourceFrom(scriptedPages(3, 5, nowSec(), 4000));
+    const h = mountToggleable(quick({ source }), false);
+
+    await settle();
+    expect(calls).toEqual([]);
+
+    h.setEnabled(true);
+    await settle();
+
+    expect(calls.length).toBeGreaterThan(0);
+    expect(h.api().cards.length).toBeGreaterThan(0);
+  });
+
+  it('enabled=true 时照常加载（默认行为不变）', async () => {
+    const { source, calls } = sourceFrom(scriptedPages(1, 2, nowSec(), 4000));
+    const feed = mountFeed(quick({ source }));
+
+    await settle();
+
+    expect(calls.length).toBeGreaterThan(0);
+    expect(feed().cards.length).toBeGreaterThan(0);
+  });
+
   it('从第 1 页开始连续翻，直到流到底，卡片合并去重', async () => {
     const pages = scriptedPages(3, 5, nowSec(), 4000);
     const { source, calls } = sourceFrom(pages);

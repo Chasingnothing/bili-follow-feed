@@ -130,7 +130,9 @@ const NO_MOVE: MoveApi = {
 };
 
 export default function App() {
-  const feed = useFeed();
+  // 模式 2（UP 主拉取）不用动态流 —— 见 useFeed 的 enabled 参数
+  const [mode, setMode] = useState<FeedMode>(() => loadMode());
+  const feed = useFeed({}, mode === 'feed');
   const followings = useFollowings();
 
   const [groups, setGroups] = useState<Group[]>(() => loadGroups());
@@ -165,7 +167,6 @@ export default function App() {
 
   // ── 模式 2（UP 主拉取）────────────────────────────────────────────────
 
-  const [mode, setMode] = useState<FeedMode>(() => loadMode());
   /** 每个板块的层数（每个 UP 显示前几条）。落盘，刷新后原样恢复 */
   const [upLayers, setUpLayers] = useState<Record<string, number>>(() => loadUpLayers());
   /**
@@ -217,14 +218,6 @@ export default function App() {
       return next;
     });
   }, []);
-
-  const onMarkAllRead = useCallback(() => {
-    setReadSet(() => {
-      const next = markAllRead(feed.cards.map((c) => c.id));
-      if (!saveRead(next)) setStorageWarning(true);
-      return next;
-    });
-  }, [feed.cards]);
 
   // ── 排序与筛选 ────────────────────────────────────────────────────────
 
@@ -301,6 +294,25 @@ export default function App() {
         .filter((c) => filter !== 'unread' || !readSet.has(c.id)),
     [typeFilter, filter, readSet],
   );
+
+  /**
+   * 「全部标记已读」的作用对象。
+   *
+   * 按模式取：模式 1 是动态流的卡片，模式 2 是按 UP 缓存的内容。
+   * 不这么分的话，模式 2 里动态流是空的，这个按钮点了什么都不会发生。
+   */
+  const markAllTargets = useMemo(
+    () => (mode === 'feed' ? feed.cards : upSections.flatMap((s) => s.items)),
+    [mode, feed.cards, upSections],
+  );
+
+  const onMarkAllRead = useCallback(() => {
+    setReadSet(() => {
+      const next = markAllRead(markAllTargets.map((c) => c.id));
+      if (!saveRead(next)) setStorageWarning(true);
+      return next;
+    });
+  }, [markAllTargets]);
 
   const changeMode = useCallback((m: FeedMode) => {    setMode(m);
     saveMode(m);
@@ -794,21 +806,28 @@ export default function App() {
             </>
           )}
 
-          <button type="button" onClick={onMarkAllRead} disabled={feed.cards.length === 0}>
+          {/* 「全部标记已读」按模式取目标：模式 2 里动态流是空的，标它没有意义 */}
+          <button type="button" onClick={onMarkAllRead} disabled={markAllTargets.length === 0}>
             全部标记已读
           </button>
-          <button type="button" onClick={feed.refresh} disabled={feed.loading || feed.filling}>
-            刷新
-          </button>
 
-          <span className="bff-count">
-            {visibleFlat.length} / {feed.cards.length}
-            {hiddenCount > 0 && (
-              <span className="bff-hidden-hint" title="这些 UP 在「隐藏」分组里，视频已被过滤">
-                （已隐藏 {hiddenCount} 条）
+          {/* 「刷新」和「N / M」都是动态流的概念，模式 2 没有 */}
+          {mode === 'feed' && (
+            <>
+              <button type="button" onClick={feed.refresh} disabled={feed.loading || feed.filling}>
+                刷新
+              </button>
+
+              <span className="bff-count">
+                {visibleFlat.length} / {feed.cards.length}
+                {hiddenCount > 0 && (
+                  <span className="bff-hidden-hint" title="这些 UP 在「隐藏」分组里，视频已被过滤">
+                    （已隐藏 {hiddenCount} 条）
+                  </span>
+                )}
               </span>
-            )}
-          </span>
+            </>
+          )}
 
           <a className="bff-back" href={BILIBILI_HOME}>
             返回 B站
@@ -981,21 +1000,26 @@ export default function App() {
 
       </main>
 
-      <LoadMoreBar
-        loaded={feed.cards.length}
-        hasMore={feed.hasMore}
-        busy={feed.loading || feed.filling || feed.loadingMore}
-        progress={feed.moreProgress}
-        filling={feed.filling}
-        paused={feed.paused}
-        filledPages={feed.filledPages}
-        refreshing={feed.refreshing}
-        raised={batchActive}
-        onLoad={feed.loadMore}
-        onPause={feed.pause}
-        onResume={feed.resume}
-      />
-
+      {/*
+       * 悬浮「加载更多」是**动态流的翻页**入口，模式 2 里没有这个概念
+       * （那边每个板块有自己的「拉取更多」），所以整个隐藏。
+       */}
+      {mode === 'feed' && (
+        <LoadMoreBar
+          loaded={feed.cards.length}
+          hasMore={feed.hasMore}
+          busy={feed.loading || feed.filling || feed.loadingMore}
+          progress={feed.moreProgress}
+          filling={feed.filling}
+          paused={feed.paused}
+          filledPages={feed.filledPages}
+          refreshing={feed.refreshing}
+          raised={batchActive}
+          onLoad={feed.loadMore}
+          onPause={feed.pause}
+          onResume={feed.resume}
+        />
+      )}
       {batchActive && (
         <BatchBar
           count={selected.size}

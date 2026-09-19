@@ -145,8 +145,12 @@ function loadStoredHours(): number {
  *  2. **有缓存** → 先把缓存铺上（刷新页面不白屏、不重拉），再**增量刷新**：
  *     从顶部往下抓，撞见已知条目就停。离开 1 小时通常只需 1 页
  *  3. **增量追不上**（离线太久）→ 退回完整加载
+ *
+ * `enabled` 为 false 时**完全不发请求**。模式 2（UP 主拉取）用的是按 UP 的缓存，
+ * 一条动态流都用不上 —— 不关掉的话每次打开页面都白拉最多 40 页（40 个请求）。
+ * 之后切成 true（用户切回动态流）时才开始加载。
  */
-export function useFeed(overrides: Partial<FeedDeps> = {}): FeedApi {
+export function useFeed(overrides: Partial<FeedDeps> = {}, enabled = true): FeedApi {
   // 冻结在第一渲染：依赖在 hook 生命周期内不应该变（测试传一次就够了），
   // 用 ref 而不是 useMemo 是为了避免调用方传对象字面量导致每渲染都重建
   const depsRef = useRef<FeedDeps | null>(null);
@@ -517,12 +521,14 @@ export function useFeed(overrides: Partial<FeedDeps> = {}): FeedApi {
   );
 
   useEffect(() => {
+    // 模式 2 不需要动态流 —— 一个请求都不发。切成 true 时（用户切回动态流）再加载。
+    if (!enabled) return;
     if (started.current) return; // 挡住 React StrictMode 的二次执行
     started.current = true;
     void load(windowHours, false);
     // 只在挂载时跑一次；窗口变化由 setWindowHours 自己触发
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [load]);
+  }, [enabled, load]);
 
   /**
    * 切换时间窗 —— **不再清空重拉**。

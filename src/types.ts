@@ -26,7 +26,7 @@ export interface FeedItem {
   title: string;
   /** 视频封面 / 图文首图（纯文字动态为空串）。**已保证为 https://**，否则会被混合内容拦截 */
   cover: string;
-  /** 封面原始像素尺寸；0 = 未知。用来占位，避免图片加载完成时卡片跳动 */
+  /** 封面原始像素尺寸；0 = 未知 */
   coverW: number;
   coverH: number;
   /** 图文共几张图；视频恒为 0 */

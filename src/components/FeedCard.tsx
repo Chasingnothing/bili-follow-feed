@@ -26,12 +26,14 @@ export default function FeedCard({ item, read, isNew, onOpen, onPick }: Props) {
   const isImage = item.kind === 'image';
   const hasCover = item.cover !== '';
 
-  // 已知原始尺寸时按比例预留位置，避免图片加载完成后卡片跳动。
-  // 视频封面拿不到尺寸（`archive` 里没有），交给 CSS 的固定比例。
-  const coverStyle =
-    hasCover && item.coverW > 0 && item.coverH > 0
-      ? { aspectRatio: `${item.coverW} / ${item.coverH}` }
-      : undefined;
+  /*
+   * 封面框**统一交给 CSS**（`.bff-cover-wrap` 是固定的 16:10，配 `object-fit: cover`
+   * 按容器裁切填满）。视频和图文、横图和竖图都长一样高，网格才齐。
+   *
+   * 曾经试过按原图宽高比设 `aspect-ratio`（本意是避免图片加载时跳动），
+   * 但 750×1000 的竖图会撑出比视频封面高得多的框，整个网格参差不齐。
+   * 所以 `coverW`/`coverH` 目前**不参与布局**，只是留着备用。
+   */
 
   return (
     <div className={`bff-card${read ? ' bff-card--read' : ''}`}>
@@ -43,7 +45,7 @@ export default function FeedCard({ item, read, isNew, onOpen, onPick }: Props) {
         onClick={() => onOpen(item)}
         title={item.title}
       >
-        <div className="bff-cover-wrap" style={coverStyle}>
+        <div className="bff-cover-wrap">
           {hasCover ? (
             /* referrerPolicy 绕开 i0/i1.hdslb.com 的防盗链；图片地址已在映射层提升为 https */
             <img

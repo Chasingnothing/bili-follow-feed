@@ -104,22 +104,32 @@ html.bff-active body {
   display: grid;
   gap: 20px;
   padding: 20px 24px 40px;
-  grid-template-columns: repeat(4, 1fr);
+  /*
+   * ⚠️ 必须是 `minmax(0, 1fr)`，不能写成 `1fr`。
+   *
+   * `1fr` 其实是 `minmax(auto, 1fr)`，那个 `auto` 下限让列**不能窄于内容的
+   * 最小内容宽度** —— 图文正文里只要有一长串不可断行的字符（URL、长英文词、
+   * 一长串数字），那一列就被撑宽，而封面是 16:10 相对宽度，于是那**整列**的
+   * 卡片都跟着变大，看起来像"莫名其妙有一列不一样大"。
+   */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 @media (max-width: 1400px) {
   .bff-grid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 @media (max-width: 900px) {
   .bff-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 /* 卡片是容器，不是链接 —— 内部有两个并列链接（视频 / UP 主页） */
 .bff-card {
   display: block;
+  /* 兜底：万一将来又出现撑宽的父容器，卡片自己也不参与"最小内容宽度"的计算 */
+  min-width: 0;
 }
 .bff-card-main {
   display: block;
@@ -209,6 +219,11 @@ html.bff-active body {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  /*
+   * `anywhere` 而不是 `break-word`：只有 `anywhere` 会同时**降低最小内容宽度**，
+   * 长 URL / 长英文词才不会把整列撑宽。图文正文里这类内容很常见。
+   */
+  overflow-wrap: anywhere;
 }
 .bff-card-main:hover .bff-title {
   color: #fb7299;

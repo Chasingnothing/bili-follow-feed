@@ -70,6 +70,8 @@ function baseProps(selected: Set<number>, count = 30): ComponentProps<typeof Sid
     error: null,
     lastSync: 0,
     fromCache: false,
+    followingsTotal: count,
+    followingsTruncated: false,
     batchActive: true,
     selected,
     diverged: new Set<number>(),
@@ -218,5 +220,22 @@ describe('App → Sidebar 的 props 必须是稳定引用', () => {
     const block = sidebarJsx();
     expect(block).toContain('onOpenGroupMenu=');
     expect(block.split('\n').length).toBeGreaterThan(5);
+  });
+});
+
+describe('关注列表被截断时必须显示出来', () => {
+  it('正常情况不显示警告', () => {
+    const { proxy } = countingSet();
+    act(() => root.render(<Harness {...baseProps(proxy)} />));
+    expect(container.textContent).not.toContain('超过单次导入上限');
+  });
+
+  it('truncated 为真时报出总数与实际导入数', () => {
+    const { proxy } = countingSet();
+    const props = { ...baseProps(proxy, 120), followingsTotal: 8234, followingsTruncated: true };
+    act(() => root.render(<Harness {...props} />));
+    expect(container.textContent).toContain('8234');
+    expect(container.textContent).toContain('120');
+    expect(container.textContent).toContain('超过单次导入上限');
   });
 });

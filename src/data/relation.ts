@@ -30,11 +30,21 @@ export async function fetchTags(): Promise<BiliTag[]> {
   return (json.data ?? []) as BiliTag[];
 }
 
+export interface FollowingsPage {
+  items: TrimmedFollowedUp[];
+  /**
+   * 关注总数。**B站 每一页都会返回它**，所以拿它不需要额外请求 ——
+   * 用它比"某页不足一页即终止"可靠：服务端对 `ps` 有上限（实测传 100 只给 50），
+   * 靠"短页"判断会在服务端截断时提前收工。
+   */
+  total: number;
+}
+
 /**
  * 关注列表单页。**只保留落盘需要的字段** —— B站 原始项还带 sign / vip /
  * official_verify 等，体积是裁剪后的 4-5 倍（设计文档 §15.1）。
  */
-export async function fetchFollowings(vmid: number, pn: number): Promise<TrimmedFollowedUp[]> {
+export async function fetchFollowings(vmid: number, pn: number): Promise<FollowingsPage> {
   const params = new URLSearchParams({
     vmid: String(vmid),
     pn: String(pn),
@@ -48,29 +58,16 @@ export async function fetchFollowings(vmid: number, pn: number): Promise<Trimmed
   ensureOk(json);
 
   const raw = (json.data?.list ?? []) as Array<Record<string, unknown>>;
-  return raw.map((u) => ({
-    mid: Number(u.mid),
-    uname: String(u.uname ?? ''),
-    face: toHttps(String(u.face ?? '')),
-    tag: Array.isArray(u.tag) ? (u.tag as number[]) : null,
-    special: (u.special === 1 ? 1 : 0) as 0 | 1,
-  }));
-}
-
-/**
- * 关注总数。
- *
- * 目前无人调用 —— 分页改为「某页返回不足一页即终止」，比先查 total 少一次请求。
- * 保留它是因为 B站 可能返回恰好整页的边界情况，届时需要用它做二次确认。
- */
-export async function fetchFollowingsTotal(vmid: number): Promise<number> {
-  const params = new URLSearchParams({ vmid: String(vmid), pn: '1', ps: '1' });
-  const res = await fetch(`${API}/x/relation/followings?${params.toString()}`, {
-    credentials: 'include',
-  });
-  const json = await res.json();
-  ensureOk(json);
-  return Number(json.data?.total ?? 0);
+  return {
+    items: raw.map((u) => ({
+      mid: Number(u.mid),
+      uname: String(u.uname ?? ''),
+      face: toHttps(String(u.face ?? '')),
+      tag: Array.isArray(u.tag) ? (u.tag as number[]) : null,
+      special: (u.special === 1 ? 1 : 0) as 0 | 1,
+    })),
+    total: Number(json.data?.total ?? 0),
+  };
 }
 
 export const RELATION_PAGE_SIZE = PAGE_SIZE;

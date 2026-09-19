@@ -46,26 +46,38 @@ describe('fetchTags', () => {
 describe('fetchFollowings', () => {
   it('裁剪掉不需要落盘的字段', async () => {
     stubFetch({ code: 0, data: { list: rawFollowings, total: 3 } });
-    const list = await fetchFollowings(293793435, 1);
-    expect(list).toHaveLength(3);
-    expect(Object.keys(list[0]).sort()).toEqual(['face', 'mid', 'special', 'tag', 'uname']);
-    expect(list[0]).not.toHaveProperty('sign');
-    expect(list[0]).not.toHaveProperty('vip');
-    expect(list[0]).not.toHaveProperty('official_verify');
+    const { items } = await fetchFollowings(293793435, 1);
+    expect(items).toHaveLength(3);
+    expect(Object.keys(items[0]).sort()).toEqual(['face', 'mid', 'special', 'tag', 'uname']);
+    expect(items[0]).not.toHaveProperty('sign');
+    expect(items[0]).not.toHaveProperty('vip');
+    expect(items[0]).not.toHaveProperty('official_verify');
+  });
+
+  it('带出 total —— 用它判断是否拉全，比"短页即末页"可靠', async () => {
+    stubFetch({ code: 0, data: { list: rawFollowings, total: 283 } });
+    expect((await fetchFollowings(293793435, 1)).total).toBe(283);
+  });
+
+  it('data 缺失时 total 为 0 而不是 NaN', async () => {
+    stubFetch({ code: 0 });
+    const page = await fetchFollowings(293793435, 1);
+    expect(page.total).toBe(0);
+    expect(page.items).toEqual([]);
   });
 
   it('把 http 头像提升为 https', async () => {
     stubFetch({ code: 0, data: { list: rawFollowings, total: 3 } });
-    const list = await fetchFollowings(293793435, 1);
-    expect(list.every((u) => u.face.startsWith('https://'))).toBe(true);
+    const { items } = await fetchFollowings(293793435, 1);
+    expect(items.every((u) => u.face.startsWith('https://'))).toBe(true);
   });
 
   it('保留 tag 为 null 的语义', async () => {
     stubFetch({ code: 0, data: { list: rawFollowings, total: 3 } });
-    const list = await fetchFollowings(293793435, 1);
-    expect(list[0].tag).toBeNull();
-    expect(list[1].tag).toEqual([207542]);
-    expect(list[2].tag).toEqual([-10, 194110]);
+    const { items } = await fetchFollowings(293793435, 1);
+    expect(items[0].tag).toBeNull();
+    expect(items[1].tag).toEqual([207542]);
+    expect(items[2].tag).toEqual([-10, 194110]);
   });
 
   it('请求带 vmid/pn/ps 且 credentials 为 include', async () => {
@@ -75,12 +87,13 @@ describe('fetchFollowings', () => {
     expect(url).toContain('/x/relation/followings');
     expect(url).toContain('vmid=293793435');
     expect(url).toContain('pn=2');
+    // ⚠️ ps 必须保持 50：服务端上限就是 50，改成 100 只会拿到 50 条
     expect(url).toContain('ps=50');
     expect(init.credentials).toBe('include');
   });
 
-  it('列表缺失时返回空数组', async () => {
+  it('列表缺失时 items 为空数组', async () => {
     stubFetch({ code: 0 });
-    expect(await fetchFollowings(293793435, 1)).toEqual([]);
+    expect((await fetchFollowings(293793435, 1)).items).toEqual([]);
   });
 });

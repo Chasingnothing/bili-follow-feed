@@ -486,6 +486,8 @@ export default function App() {
         error={followings.error}
         lastSync={followings.lastSync}
         fromCache={followings.fromCache}
+        followingsTotal={followings.total}
+        followingsTruncated={followings.truncated}
         batchActive={batchActive}
         selected={selected}
         diverged={diverged}

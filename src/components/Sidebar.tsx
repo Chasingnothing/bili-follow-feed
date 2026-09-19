@@ -19,6 +19,10 @@ interface Props {
   error: string | null;
   lastSync: number;
   fromCache: boolean;
+  /** B站 报的关注总数（0 = 未知） */
+  followingsTotal: number;
+  /** 是否因为翻到页数上限而**没拉全** —— 必须显示出来，不能静默 */
+  followingsTruncated: boolean;
 
   batchActive: boolean;
   selected: Set<number>;
@@ -49,6 +53,8 @@ function Sidebar(props: Props) {
     error,
     lastSync,
     fromCache,
+    followingsTotal,
+    followingsTruncated,
     batchActive,
     selected,
     diverged,
@@ -119,6 +125,13 @@ function Sidebar(props: Props) {
       </div>
 
       {error && <div className="bff-side-error">拉取关注列表失败：{error}</div>}
+
+      {followingsTruncated && (
+        <div className="bff-side-error">
+          你的关注数（{followingsTotal}）超过单次导入上限，只导入了前 {followings.length} 个 ——
+          分组可能不完整
+        </div>
+      )}
 
       <div className="bff-side-list">
         {ordered.map((g) => {

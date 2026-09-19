@@ -5,9 +5,19 @@ import { readJson, writeJson } from '../lib/storage';
 import { buildUpIndex } from '../lib/upIndex';
 import { isSeeded, seedFromBilibili } from '../lib/localGroups';
 
+import { decidePaging } from '../lib/followingsPaging';
+
 const CACHE_KEY = 'bff:followingsCache';
-/** 防呆上限：40 页 × 50 = 2000 人 */
-const MAX_PAGES = 40;
+/**
+ * 翻页上限：100 页 × 50 = **5000 人**。
+ *
+ * 原先只有 40 页（2000 人），而且超出时**静默丢弃** —— 关注超过 2000 的用户
+ * 会以为分组不完整是 B站 的问题。现在靠 `decidePaging` 判定成"截断"并提示。
+ *
+ * `ps` 这条路提不上去：服务端上限就是 50（实测传 `ps=100` 只返回 50 条），
+ * 所以只能靠 `pn` 翻得更多。`pn=100` 实测不报错（返回空页）。
+ */
+const MAX_PAGES = 100;
 /** 分页之间停一下，别把自己送进风控 */
 const PAGE_DELAY_MS = 300;
 /** 缓存新鲜期：超过就自动重新拉 */
@@ -17,6 +27,10 @@ interface FollowingsCache {
   at: number;
   list: TrimmedFollowedUp[];
   tags: BiliTag[];
+  /** B站 报的关注总数（0 = 未知） */
+  total?: number;
+  /** 上一轮是否因为翻到页数上限而没拉全 */
+  truncated?: boolean;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -30,6 +44,10 @@ export interface FollowingsApi {
   tags: BiliTag[];
   /** mid → UP 信息。**内存计算**，不落盘 —— 避免多一份可能漂移的派生缓存 */
   upIndex: Record<string, UpInfo>;
+  /** B站 报的关注总数（0 = 未知） */
+  total: number;
+  /** 是否因为翻到页数上限而**没拉全** —— 界面必须把它显示出来，不能静默 */
+  truncated: boolean;
   loading: boolean;
   error: string | null;
   lastSync: number;
@@ -50,6 +68,8 @@ export function useFollowings(): FollowingsApi {
   const [error, setError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState(0);
   const [fromCache, setFromCache] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [truncated, setTruncated] = useState(false);
   const started = useRef(false);
 
   const load = useCallback(async (force: boolean) => {
@@ -60,6 +80,8 @@ export function useFollowings(): FollowingsApi {
       if (!force && cached && cached.list && Date.now() - cached.at < CACHE_TTL_MS) {
         setList(cached.list);
         setTags(cached.tags ?? []);
+        setTotal(cached.total ?? 0);
+        setTruncated(Boolean(cached.truncated));
         setLastSync(cached.at);
         setFromCache(true);
         return;
@@ -69,21 +91,44 @@ export function useFollowings(): FollowingsApi {
       const tagList = await fetchTags();
 
       const all: TrimmedFollowedUp[] = [];
+      let seenTotal = 0;
+      let wasTruncated = false;
+
       for (let pn = 1; pn <= MAX_PAGES; pn++) {
         const page = await fetchFollowings(self.mid, pn);
-        all.push(...page);
-        if (page.length < RELATION_PAGE_SIZE) break;
+        all.push(...page.items);
+        if (page.total > 0) seenTotal = page.total;
+
+        const decision = decidePaging(
+          { got: all.length, total: seenTotal, pageLen: page.items.length },
+          RELATION_PAGE_SIZE,
+          MAX_PAGES,
+          pn,
+        );
+        if (decision === 'done') break;
+        if (decision === 'truncated') {
+          wasTruncated = true;
+          break;
+        }
         await sleep(PAGE_DELAY_MS);
       }
 
       const at = Date.now();
-      writeJson(CACHE_KEY, { at, list: all, tags: tagList } satisfies FollowingsCache);
+      writeJson(CACHE_KEY, {
+        at,
+        list: all,
+        tags: tagList,
+        total: seenTotal,
+        truncated: wasTruncated,
+      } satisfies FollowingsCache);
 
       // 首次导入：本地从未初始化过分组时，按 B站 分组建立起点
       if (!isSeeded()) seedFromBilibili(tagList, all);
 
       setList(all);
       setTags(tagList);
+      setTotal(seenTotal);
+      setTruncated(wasTruncated);
       setLastSync(at);
       setFromCache(false);
     } catch (e) {
@@ -106,6 +151,8 @@ export function useFollowings(): FollowingsApi {
     list,
     tags,
     upIndex,
+    total,
+    truncated,
     loading,
     error,
     lastSync,

@@ -10,7 +10,8 @@
 
 | | |
 |---|---|
-| **是什么** | 一个 Chrome 用户脚本，把 B站 的关注动态流渲染成一个**按分组组织的卡片墙**（视频 + 图文），绕开首页推荐流 |
+| **是什么** | 一个浏览器用户脚本，把 B站 的关注动态流渲染成一个**按分组组织的卡片墙**（视频 + 图文），绕开首页推荐流 |
+| **在哪些浏览器上验证过** | **只有 Chrome**。Firefox / Edge 的分析见 §9「跨浏览器可用性」（代码未按它改动过） |
 | **在哪** | `E:\ds\bili-follow-feed`（git 仓库，**无远程**） |
 | **当前版本** | `main` = **v0.9.4**，**430 个测试**（24 个测试文件），构建通过 |
 | **入口** | `https://www.bilibili.com/agent-feed`（用户脚本 `@match` 收窄到这一个路径） |
@@ -583,6 +584,9 @@ Tampermonkey 显示 **Reinstall**（不是 Update）是正常的 —— 从本�
 
 **改行为必须升版本号** —— 用户判断"新版装上没有"的唯一依据就是 Tampermonkey 面板里的版本号。（踩过：修了 bug 没升版本，用户看不出区别。）
 
+**只在 Chrome 上验证过。** 同一份 `dist` 可以装到 Firefox / Edge（都要各自装一次 Tampermonkey），
+但**没有任何一处在 Firefox/Edge 上实测过** —— 已核实的部分和三个风险点在 §9「跨浏览器可用性」。
+
 **构建自检一行**：`dist` 应该只有 **21 行**左右。如果变成一万多行，说明**压缩配置失效了**（踩过：Vite 8 / Rolldown 默认不压缩，588 KB）。副作用是 Tampermonkey 的编辑器要去渲染一万多行 → **用户以为"电脑卡住了"**。
 
 ### 测试策略
@@ -641,6 +645,7 @@ Tampermonkey 显示 **Reinstall**（不是 Update）是正常的 —— 从本�
 | **模式 2 每个 UP 只留 5 条** | `MAX_PER_UP = 5`。想看更早的要去 B站 主页 |
 | **模式 2 不覆盖「未分类」** | 那 93% 的人要先去归类（设计使然，见 §5⑫） |
 | **拉取后当前页内容会被挤走** | 板块按发布时间整体排序 + 每 20 条一页，插入必然位移。**用户已确认维持原样**，见 `docs/specs/...mode2...md` §13 |
+| **只在 Chrome 上验证过** | Firefox / Edge **未实测**。已核实的部分与三个风险点见本节末「跨浏览器可用性」 |
 
 ### 规模化到"开源后被大号关注数用户使用"的硬墙
 
@@ -654,6 +659,55 @@ Tampermonkey 显示 **Reinstall**（不是 Update）是正常的 —— 从本�
 | **缓存只覆盖最近用过的 600 个 UP** | `MAX_UPS = 600`（超出按 `lastUsedAt` 淘汰） | 5000 关注的人，缓存里没有 ≠ 没有更新。**UI 绝不能据此下"无更新"结论** |
 
 > 第二条与模式 2 无关，**现在就已经存在**（只要用户关注数上千就会明显卡）。
+
+### 跨浏览器可用性（Firefox / Edge）—— 2026-09-14 核实，**代码未改动**
+
+用户问过"现在这个版本能不能在 Firefox 或 Edge 里用"。**结论：Edge 应该没问题；Firefox 大概率能，
+但有三个点没验证过。** 当时选择"只记录、不改代码"，所以下面 ①②③ 至今仍然成立。
+
+#### 已核实的（可复现，不是推测）
+
+| 项 | 结论 | 怎么核实的 |
+|---|---|---|
+| **产物语法下限** | Firefox **114+** / Edge **111+** | 读本地 `node_modules/vite/dist/node/chunks/node.js` 的 `ESBUILD_BASELINE_WIDELY_AVAILABLE_TARGET` = `chrome111 / edge111 / firefox114 / safari16.4`（Vite 8.3.0 的 `baseline-widely-available` 默认值）。当前 Firefox 14x、Edge 13x、连 Firefox ESR 115 都在线上 |
+| **有没有用专有 API** | 没有 | 全仓库搜 `unsafeWindow` / `chrome.` / `browser.` / 页面全局：只有两个测试文件用了 `globalThis` |
+| **CSS 兼容性** | 全标准 | 只有一条 `::-webkit-inner-spin-button`（Firefox 直接忽略该规则，只影响数字输入框的上下小箭头）。`position: sticky` / `aspect-ratio` 两边都支持，无 `:has()` / `@container` |
+| **GM API 依赖** | 只有 `GM_addStyle`，**且有 DOM 回退** | 它**不是源码调的** —— 是 vite-plugin-monkey 因为 `App.tsx` 里 `import './styles.css'` 自动加的 grant。插件源码 `defaultCssSideEffects` 是 `typeof GM_addStyle === "function" ? GM_addStyle(c) : (document.head \|\| document.documentElement).appendChild(...)` |
+| **Tampermonkey 可得性** | 两边都有 | Edge 加载项商店 / Firefox AMO。三个浏览器各装一次，指向同一份 `dist` |
+
+#### 三个没验证过的点（按危险程度排）
+
+**① 沙箱（最致命）**
+
+当前产物头是 `@grant GM_addStyle` → 沙箱**开着**。[Tampermonkey 文档](https://www.tampermonkey.net/documentation.php?ext=dhdg&q=grant)明确：
+
+> In case `@grant` is followed by `none` the sandbox is disabled.
+> If no `@grant` tag is given an empty list is assumed. **However this different from using `none`.**
+
+Chrome 上沙箱里的 `fetch`（带 cookie）和 `localStorage` 都正常（用户一直在用）；
+**Firefox 的沙箱是 Xray 实现，机制不同**。Tampermonkey 的设计目标就是跨浏览器一致，
+所以大概率一样 —— 但若不一致，症状是接口返回 **`-101 账号未登录`、页面全空**，属于直接不可用。
+
+**若要消除它**：给 `monkey()` 传 `grant: 'none'`（关沙箱 → 页面上下文 → 与 Chrome 行为完全一致）。
+**已确认这个改动是安全的** —— 上表那条 DOM 回退保证样式照样注入。
+
+**② localStorage 配额**
+
+Chrome 是 10 MiB（已核对 Chromium 源码常量，见 §6）；Firefox 明显更小，
+本文档记的"5 MiB 量级"**当时就没实测**。最坏情况 2.96 MiB 在 5 MiB 下占 **59%** —— 能活但更紧。
+踩到上限**不会崩**（写失败返回 `false` 并出提示，不是静默吞掉），代价只是新一轮拉取存不下来。
+
+**③ `document-start` 的时机**
+
+`main.tsx` 里 `mount()` 直接 `document.documentElement.appendChild(host)`，
+紧接着 `observer.observe(document.documentElement, ...)` —— 若某引擎在 `document-start` 时
+`documentElement` 还是 `null`，这两处都会抛，整个脚本就死了。Chrome 上不会，**Firefox 未验证**。
+兜底办法：拿不到就等一次 `DOMContentLoaded` 再挂。
+
+> **排查入口**：用户在 Firefox / Edge 报"页面全空"或"没有数据"时，
+> **先查 ①** —— 按 F12 看 `x/web-interface/nav` 的返回码是不是 `-101`，再去怀疑 ②。
+> 三个浏览器的验证清单：装 Tampermonkey → 打开 `/agent-feed` → 看到卡片墙 + 侧边栏有分组
+> → 模式 2 点「拉取更多」能出内容（这一步同时验证了沙箱里的 `fetch` 带 cookie 和 `localStorage` 可写）。
 
 ---
 

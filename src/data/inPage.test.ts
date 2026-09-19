@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { InPageDataSource } from './inPage';
-import { avItem, liveRcmdItem } from '../lib/__fixtures__/items';
+import { avItem, liveRcmdItem, opusTextItem } from '../lib/__fixtures__/items';
 
 /** 只 stub 出被测代码用到的 .json()，避免依赖 jsdom 里不存在的 Response */
 function stubFetch(payload: unknown) {
@@ -88,5 +88,43 @@ describe('InPageDataSource', () => {
   it('无任何条目时 oldestPubTs 为 0（调用方据此判定到头了）', async () => {
     stubFetch({ code: 0, data: { items: [], has_more: true, offset: 'o' } });
     expect((await new InPageDataSource().fetchPage(null)).oldestPubTs).toBe(0);
+  });
+});
+
+describe('InPageDataSource.fetchUpSpace（模式 2 用）', () => {
+  it('打到 feed/space，带 host_mid，且不带 offset 时是首页', async () => {
+    const fn = stubFetch({ code: 0, data: { items: [], has_more: true, offset: 'o1' } });
+    await new InPageDataSource().fetchUpSpace(442715778, null);
+
+    const [url, init] = fn.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/x/polymer/web-dynamic/v1/feed/space');
+    expect(url).toContain('host_mid=442715778');
+    expect(new URL(url).searchParams.has('offset')).toBe(false);
+    expect(init.credentials).toBe('include');
+  });
+
+  it('把游标透传为 offset（键值游标是 19 位字符串，必须原样传）', async () => {
+    const fn = stubFetch({ code: 0, data: { items: [], has_more: true, offset: '' } });
+    const cursor = '1245315485379067940';
+    await new InPageDataSource().fetchUpSpace(1, cursor);
+
+    const url = new URL(String(fn.mock.calls[0][0]));
+    expect(url.searchParams.get('offset')).toBe(cursor);
+  });
+
+  it('与 feed/all 共用同一套解析（图文也能映射出来）', async () => {
+    stubFetch({ code: 0, data: { items: [opusTextItem], has_more: false, offset: '' } });
+    const page = await new InPageDataSource().fetchUpSpace(1, null);
+
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0].kind).toBe('image');
+    expect(page.items[0].id).toBe('1249728821950677009');
+    // 空字符串 offset 归一化为 null
+    expect(page.nextOffset).toBeNull();
+  });
+
+  it('非 0 code 抛错（含风控）', async () => {
+    stubFetch({ code: -352, message: '风控校验失败' });
+    await expect(new InPageDataSource().fetchUpSpace(1, null)).rejects.toThrow(/风控/);
   });
 });

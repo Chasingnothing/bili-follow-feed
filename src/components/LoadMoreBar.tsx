@@ -176,39 +176,46 @@ export default function LoadMoreBar({
         title="按住拖动位置 · 双击复位到右下角"
       >
         ⠿ 已加载 {loaded} 条
-        {refreshing && <span className="bff-loadmore-checking">· 检查更新中…</span>}
       </span>
 
       {paused ? (
         <>
-          <span className="bff-loadmore-progress">已暂停 · 已补 {filledPages} 页</span>
+          <span className="bff-loadmore-progress">已暂停</span>
           <button
             type="button"
             className="bff-loadmore-go"
             onClick={onResume}
-            title="从暂停处接着补齐"
+            title="从暂停处接着拉"
           >
             继续
           </button>
         </>
-      ) : filling ? (
+      ) : progress ? (
         <>
-          <span className="bff-loadmore-progress">补齐中 {filledPages} 页…</span>
-          <button
-            type="button"
-            className="bff-loadmore-go"
-            onClick={onPause}
-            title="暂停补齐（已拉到的内容会保留，可以之后再继续）"
-          >
+          <span className="bff-loadmore-progress">
+            加载中 {progress.done}/{progress.total} 页…
+          </span>
+          <button type="button" className="bff-loadmore-go" onClick={onPause} title="暂停加载">
             暂停
           </button>
         </>
-      ) : progress ? (
-        <span className="bff-loadmore-progress">
-          加载中 {progress.done}/{progress.total} 页…
-        </span>
       ) : (
         <>
+          {(filling || refreshing) && (
+            <>
+              <span className="bff-loadmore-progress">
+                {filling ? `补齐中 ${filledPages} 页…` : '检查更新中…'}
+              </span>
+              <button
+                type="button"
+                className="bff-loadmore-go"
+                onClick={onPause}
+                title="暂停（已拉到的内容会保留，可以之后再继续）"
+              >
+                暂停
+              </button>
+            </>
+          )}
           <button
             type="button"
             className="bff-loadmore-go"

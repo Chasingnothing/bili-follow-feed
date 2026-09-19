@@ -91,6 +91,14 @@ export interface IncrementalResult {
   /** 是否追上了已知内容（false = 离线太久，调用方应退回完整加载） */
   caughtUp: boolean;
   pages: number;
+  /**
+   * 是否因为用户点了暂停而提前收工。
+   *
+   * ⚠️ 调用方**不能**把 `paused` 当成 `caughtUp: false` 处理 —— 后者意味着
+   * "离线太久、缓存有断层，必须整体重来"，而暂停只是"先停一下"，
+   * 已经收到的 `fresh` 是有效的，直接并进缓存即可。
+   */
+  paused: boolean;
 }
 
 export interface IncrementalOptions {
@@ -101,6 +109,8 @@ export interface IncrementalOptions {
   onPage?: (fresh: VideoCard[], index: number) => void;
   delayMs: number;
   sleep: (ms: number) => Promise<void>;
+  /** 每页开始前询问是否应中断（同 `fillToCutoff` 的 `shouldStop`） */
+  shouldStop?: () => boolean;
 }
 
 /**
@@ -114,14 +124,21 @@ export interface IncrementalOptions {
  * 不能把两段直接拼接。
  */
 export async function fetchNewer(opts: IncrementalOptions): Promise<IncrementalResult> {
-  const { fetchPage, known, maxPages, onPage, delayMs, sleep } = opts;
+  const { fetchPage, known, maxPages, onPage, delayMs, sleep, shouldStop } = opts;
 
   const fresh: VideoCard[] = [];
   let offset: string | null = null;
   let caughtUp = false;
+  let paused = false;
   let pages = 0;
 
   while (pages < maxPages) {
+    // 与 fillToCutoff 一致：在取下一页之前检查，当前页已交付的不丢
+    if (shouldStop?.()) {
+      paused = true;
+      break;
+    }
+
     const page = await fetchPage(offset);
     pages++;
 
@@ -143,7 +160,7 @@ export async function fetchNewer(opts: IncrementalOptions): Promise<IncrementalR
     if (pages < maxPages) await sleep(delayMs);
   }
 
-  return { fresh, caughtUp, pages };
+  return { fresh, caughtUp, pages, paused };
 }
 
 /**

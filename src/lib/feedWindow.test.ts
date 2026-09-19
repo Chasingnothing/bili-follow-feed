@@ -503,6 +503,69 @@ describe('fetchNewer', () => {
     expect(fetchPage).not.toHaveBeenCalled();
     expect(res.caughtUp).toBe(false);
   });
+
+  it('shouldStop 一开始就为真 → 不发请求，标记 paused', async () => {
+    const fetchPage = vi.fn();
+
+    const res = await fetchNewer({
+      fetchPage,
+      known: new Set(),
+      maxPages: 15,
+      delayMs: 0,
+      sleep: noSleep,
+      shouldStop: () => true,
+    });
+
+    expect(fetchPage).not.toHaveBeenCalled();
+    expect(res.pages).toBe(0);
+    expect(res.paused).toBe(true);
+    expect(res.fresh).toEqual([]);
+  });
+
+  it('中途暂停：已收到的新条目保留，且与"没追上"区分开', async () => {
+    const card = (bvid: string) => ({ bvid, pubdate: 1 }) as unknown as VideoCard;
+    let n = 0;
+    let delivered = 0;
+    const fetchPage = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(page({ items: [card(`BV${++n}`)], oldestPubTs: 9999, nextOffset: `o${n}` })),
+      );
+
+    const res = await fetchNewer({
+      fetchPage,
+      known: new Set(),
+      maxPages: 15,
+      delayMs: 0,
+      sleep: noSleep,
+      onPage: () => {
+        delivered++;
+      },
+      shouldStop: () => delivered >= 2,
+    });
+
+    expect(delivered).toBe(2);
+    expect(res.pages).toBe(2);
+    expect(res.fresh.map((c) => c.bvid)).toEqual(['BV1', 'BV2']);
+    expect(res.paused).toBe(true);
+    // 关键：paused 时 caughtUp 仍是 false，但调用方**不能**据此退回完整加载 ——
+    // 两者语义不同（一个是"先停一下"，一个是"缓存有断层"）。
+    expect(res.caughtUp).toBe(false);
+  });
+
+  it('不传 shouldStop 时 paused 恒为 false', async () => {
+    const fetchPage = vi.fn().mockResolvedValue(page({ hasMore: false, oldestPubTs: 0 }));
+
+    const res = await fetchNewer({
+      fetchPage,
+      known: new Set(),
+      maxPages: 15,
+      delayMs: 0,
+      sleep: noSleep,
+    });
+
+    expect(res.paused).toBe(false);
+  });
 });
 
 describe('offsetForKept', () => {

@@ -151,6 +151,13 @@ export function useFeed(): FeedApi {
    * 用 state 会读到闭包里的旧值（而且要等一次重渲染才生效）。
    */
   const pauseRequestedRef = useRef(false);
+  /**
+   * 暂停时记下"怎么继续"。
+   *
+   * 三个长任务（后台补齐 / 增量刷新 / 手动加载更多）的续跑方式各不相同，
+   * 与其加一个任务类型枚举再分派，不如直接存一个闭包 —— `resume()` 只管调用它。
+   */
+  const resumeFnRef = useRef<(() => void) | null>(null);
 
   /**
    * 时间窗是【显示】范围；`cardsRef` 里保留的是【已拉到的】深度（通常更深）。
@@ -290,6 +297,9 @@ export function useFeed(): FeedApi {
         if (res.stoppedBy === 'paused') {
           // 用户主动中断：已拉到的照样落盘，游标停在这一页，之后能接着拉
           setPaused(true);
+          resumeFnRef.current = () => {
+            void runFill(hoursRef.current, gen.current, tailOffset.current);
+          };
           persistCache(hours);
           return;
         }
@@ -352,11 +362,28 @@ export function useFeed(): FeedApi {
   );
 
   /**
+   * 把增量刷新的结果并进列表。
+   *
+   * ⚠️ 头部插入会改变所有卡片的下标，检查点的 count 必须同步平移。
+   * 漏了这一步会在截断时选中一个越过截断点的检查点 → 恢复后**漏掉中间几条**。
+   */
+  const mergeFresh = useCallback(
+    (fresh: VideoCard[]) => {
+      if (fresh.length === 0) return;
+      applyCards([...fresh, ...cardsRef.current]);
+      checkpointsRef.current = shiftCheckpoints(checkpointsRef.current, fresh.length);
+    },
+    [applyCards],
+  );
+
+  /**
    * 增量刷新：从顶部往下抓，撞见已知条目即停。
    * 追到上限还没撞见（离线太久）就返回 false，由调用方退回完整加载。
    */
   const incremental = useCallback(
     async (cachedCards: VideoCard[], myGen: number): Promise<'merged' | 'fallback'> => {
+      pauseRequestedRef.current = false;
+      setPaused(false);
       setRefreshing(true);
       let res: Awaited<ReturnType<typeof fetchNewer>>;
       try {
@@ -366,25 +393,34 @@ export function useFeed(): FeedApi {
           maxPages: MAX_INCREMENTAL_PAGES,
           delayMs: PAGE_DELAY_MS,
           sleep,
+          shouldStop: () => pauseRequestedRef.current,
         });
       } finally {
         setRefreshing(false);
       }
 
       if (myGen !== gen.current) return 'merged';
+
+      // ⚠️ 暂停**不等于**"没追上"：后者意味着缓存与新增之间有断层、必须整体重来。
+      // 暂停只是"先停一下"，已收到的 fresh 是有效的，并进去就好。
+      if (res.paused) {
+        mergeFresh(res.fresh);
+        setPaused(true);
+        resumeFnRef.current = () => {
+          void incremental(cardsRef.current, gen.current);
+        };
+        persistCache(hoursRef.current);
+        return 'merged';
+      }
+
       // 没追上 = 缓存与新增之间有断层，必须整体重来，不能把两段接上
       if (!res.caughtUp) return 'fallback';
 
-      if (res.fresh.length > 0) {
-        applyCards([...res.fresh, ...cardsRef.current]);
-        // ⚠️ 头部插入会改变所有卡片的下标，检查点的 count 必须同步平移。
-        // 漏了这一步会在截断时选中一个越过截断点的检查点 → 恢复后**漏掉中间几条**。
-        checkpointsRef.current = shiftCheckpoints(checkpointsRef.current, res.fresh.length);
-      }
+      mergeFresh(res.fresh);
       persistCache(hoursRef.current);
       return 'merged';
     },
-    [source, applyCards, persistCache],
+    [source, applyCards, persistCache, mergeFresh],
   );
 
   const load = useCallback(
@@ -494,11 +530,21 @@ export function useFeed(): FeedApi {
   const loadMore = useCallback(
     (pages: number) => {
       void (async () => {
+        pauseRequestedRef.current = false;
+        setPaused(false);
         setLoadingMore(true);
         setMoreProgress({ done: 0, total: pages });
         setError(null);
         try {
           for (let i = 0; i < pages; i++) {
+            if (pauseRequestedRef.current) {
+              // 剩下的页数记下来，「继续」时接着拉
+              const remaining = pages - i;
+              setPaused(true);
+              resumeFnRef.current = () => loadMore(remaining);
+              break;
+            }
+
             const page = await source.fetchPage(tailOffset.current);
 
             const seen = new Set(cardsRef.current.map((c) => c.bvid));
@@ -545,20 +591,26 @@ export function useFeed(): FeedApi {
   );
 
   /**
-   * 暂停后台补齐。
+   * 暂停动态流拉取。
    *
    * 只是**置一个标记** —— 真正的停止发生在下一页开始之前，所以当前这一页会跑完。
    * 这样做的好处是结果一页都不丢（已交付的页都已经进了 `cardsRef` 并落了盘），
    * 代价是最多多等一次限速（约 400ms）+ 一次请求往返。
+   *
+   * 三个长任务都认这个标记：后台补齐、增量刷新、手动加载更多。
    */
   const pause = useCallback(() => {
     pauseRequestedRef.current = true;
   }, []);
 
-  /** 从暂停处接着补齐：游标停在上一页末尾，所以不会重复拉 */
+  /** 从暂停处接着跑 —— 续跑方式由暂停时的任务自己登记在 `resumeFnRef` 里 */
   const resume = useCallback(() => {
-    void runFill(hoursRef.current, gen.current, tailOffset.current);
-  }, [runFill]);
+    const fn = resumeFnRef.current;
+    resumeFnRef.current = null;
+    pauseRequestedRef.current = false;
+    setPaused(false);
+    fn?.();
+  }, []);
 
   return {
     cards,

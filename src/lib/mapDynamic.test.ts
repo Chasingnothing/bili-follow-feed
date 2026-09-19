@@ -26,6 +26,17 @@ describe('mapDynamicToCard', () => {
     expect(card!.danmaku).toBe(0);
   });
 
+  it('⚠️ 回归：带单位的播放量（"3.4万"）不能变成 0', () => {
+    // 线上真实数据里 stat.play 是 "3.4万" 这样的展示字符串。
+    // 旧实现用 Number() 解析 → NaN → 兜底 0，于是**所有热门视频都显示 0 播放**，
+    // 而且「播放量最高」排序会把它们全排到最后。
+    const hot = structuredClone(avItem) as typeof avItem;
+    hot.modules.module_dynamic.major.archive.stat = { danmaku: '1.2万', play: '3.4万', vt: '' };
+    const card = mapDynamicToCard(hot);
+    expect(card!.play).toBe(34000);
+    expect(card!.danmaku).toBe(12000);
+  });
+
   it('发布时间取自 module_author.pub_ts，而非 archive.pubdate', () => {
     const card = mapDynamicToCard(avItem);
     expect(typeof card!.pubdate).toBe('number');

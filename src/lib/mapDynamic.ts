@@ -1,20 +1,25 @@
 import type { VideoCard } from '../types';
+import { parseStatCount } from './parseStat';
 
 const AV_TYPE = 'DYNAMIC_TYPE_AV';
 
 /**
  * B站 返回的封面是 `http://i1.hdslb.com/...`。页面跑在 HTTPS 下，
  * http 图片会被浏览器按混合内容直接拦掉（表现为一屏碎图），必须提升到 https。
+ * 实测 `archive.cover` 与 `opus.pics[].url` **都是 http**，两处都要过这个函数。
  */
 function toHttps(url: string): string {
   return url.startsWith('http://') ? `https://${url.slice('http://'.length)}` : url;
 }
 
 /**
- * B站 把数字字段序列化成了字符串（`stat.play`、`stat.danmaku`、`pub_ts` 都是），
- * 这里统一安全转换，避免 NaN 渗进排序和格式化逻辑。
+ * 把**纯数字字符串**转成数字。
+ *
+ * ⚠️ 只用于 `pub_ts` / `mid` 这类普通数值字段。
+ * **统计字段（play / danmaku / like…）不能用它** —— 那些是带单位的展示字符串
+ * （`"3.4万"`），要用 `parseStatCount`，否则会静默变成 0。
  */
-function toNumber(value: unknown): number {
+function toPlainNumber(value: unknown): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
 }
@@ -41,7 +46,7 @@ export function mapDynamicToCard(item: unknown): VideoCard | null {
     const author = it.modules?.module_author;
 
     const bvid = typeof archive?.bvid === 'string' ? archive.bvid : null;
-    const upMid = toNumber(author?.mid);
+    const upMid = toPlainNumber(author?.mid);
     if (!bvid || !upMid) return null;
 
     return {
@@ -49,10 +54,11 @@ export function mapDynamicToCard(item: unknown): VideoCard | null {
       title: String(archive?.title ?? ''),
       cover: toHttps(String(archive?.cover ?? '')),
       durationText: String(archive?.duration_text ?? ''),
-      play: toNumber(archive?.stat?.play),
-      danmaku: toNumber(archive?.stat?.danmaku),
+      // 统计字段是带单位的展示字符串（"3.4万"），必须走 parseStatCount
+      play: parseStatCount(archive?.stat?.play),
+      danmaku: parseStatCount(archive?.stat?.danmaku),
       // 时间戳在 author.pub_ts，不在 archive 里
-      pubdate: toNumber(author?.pub_ts),
+      pubdate: toPlainNumber(author?.pub_ts),
       upMid,
       upName: String(author?.name ?? ''),
       upFace: toHttps(String(author?.face ?? '')),

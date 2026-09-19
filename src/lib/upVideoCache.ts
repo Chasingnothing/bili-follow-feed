@@ -128,8 +128,18 @@ export function cachedUsage(): Array<{ mid: number; at: number; lastUsedAt: numb
  * 否则可能刚写完就把自己删了。
  */
 export function saveUpItems(mid: number, items: FeedItem[], now: number): boolean {
-  const evict = pickEvictions(cachedUsage(), MAX_UPS - 1);
-  for (const m of evict) removeKey(keyOf(m));
+  const existing = cachedMids();
+
+  /*
+   * 只有"新增一个 UP 且已经到上限"时才需要算淘汰。
+   *
+   * `cachedUsage()` 要**解析每一条**条目（逐个 JSON.parse）。这是每次保存都会走的
+   * 路径，无脑调用会让拉 N 个 UP 的开销变成 O(N × 已缓存数) ——
+   * 缓存 600 个、拉 500 个就是 30 万次解析。而 `cachedMids()` 只扫 key 名，很便宜。
+   */
+  if (!existing.includes(mid) && existing.length >= MAX_UPS) {
+    for (const m of pickEvictions(cachedUsage(), MAX_UPS - 1)) removeKey(keyOf(m));
+  }
 
   const entry: UpEntry = {
     at: now,

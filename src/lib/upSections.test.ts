@@ -1,7 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { MAX_LAYER, buildUpSections, clampLayer } from './upSections';
+import { loadAllItems, saveUpItems } from './upVideoCache';
+import { removeKey } from './storage';
 import type { Group } from './localGroups';
 import type { FeedItem, TrimmedFollowedUp } from '../types';
+
+beforeEach(() => localStorage.clear());
 
 function up(mid: number): TrimmedFollowedUp {
   return { mid, uname: `u${mid}`, face: '', tag: null, special: 0 };
@@ -155,5 +159,60 @@ describe('buildUpSections', () => {
     });
     expect(s[0].items.map((i) => i.id)).toEqual(['a1']);
     expect(s[1].items.map((i) => i.id)).toEqual(['a1']);
+  });
+});
+
+/**
+ * 「被淘汰的 UP 重新拉回来后，会不会直接显示满层？」
+ *
+ * 会。因为每个 UP 的缓存上限（`MAX_PER_UP`）和板块的层数上限（`MAX_LAYER`）
+ * 是同一个数字 —— 重新拉一次就存满，层数是 5 时正好全给。
+ * 这条测试把两个模块（upVideoCache + upSections）连起来验一遍。
+ */
+describe('淘汰 → 重新拉取 → 显示', () => {
+  const layer5 = { g1: MAX_LAYER };
+
+  function fiveItems(mid: number, base: number): FeedItem[] {
+    return Array.from({ length: MAX_LAYER }, (_, i) => item(`${mid}-${i}`, mid, base - i));
+  }
+
+  it('被淘汰的 UP 贡献 0 条；重新拉回来后立刻贡献满 5 条（不用再点「多看一条」）', () => {
+    saveUpItems(10, fiveItems(10, 500), 1000);
+    saveUpItems(20, fiveItems(20, 400), 1000);
+
+    // 模拟淘汰：整个条目被删掉
+    removeKey('bff:up:10');
+
+    const before = buildUpSections({
+      ...base,
+      layers: layer5,
+      cache: loadAllItems(),
+    });
+    expect(before[0].cachedCount).toBe(1);
+    expect(before[0].items.filter((i) => i.upMid === 10)).toHaveLength(0);
+
+    // 重新拉取（saveUpItems 就是 onFetched 里做的事）
+    saveUpItems(10, fiveItems(10, 600), 2000);
+
+    const after = buildUpSections({
+      ...base,
+      layers: layer5,
+      cache: loadAllItems(),
+    });
+    expect(after[0].cachedCount).toBe(2);
+    // 关键：层数已经是 5，所以重新存下的 5 条全部显示
+    expect(after[0].items.filter((i) => i.upMid === 10)).toHaveLength(MAX_LAYER);
+  });
+
+  it('层数只有 1 时，重新拉回来仍然只显示 1 条（层数是过滤器，不是自动展开）', () => {
+    saveUpItems(10, fiveItems(10, 500), 1000);
+    const s = buildUpSections({ ...base, layers: { g1: 1 }, cache: loadAllItems() });
+    expect(s[0].items.filter((i) => i.upMid === 10)).toHaveLength(1);
+  });
+
+  it('这个 UP 总共只有 3 条时，显示 3 条（有多少给多少，不补空）', () => {
+    saveUpItems(10, fiveItems(10, 500).slice(0, 3), 1000);
+    const s = buildUpSections({ ...base, layers: layer5, cache: loadAllItems() });
+    expect(s[0].items.filter((i) => i.upMid === 10)).toHaveLength(3);
   });
 });

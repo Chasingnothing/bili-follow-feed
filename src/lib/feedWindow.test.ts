@@ -12,7 +12,7 @@ import {
   NO_MANUAL_FLOOR,
   type PageCheckpoint,
 } from './feedWindow';
-import type { FeedPage, VideoCard } from '../types';
+import type { FeedPage, FeedItem } from '../types';
 
 function page(over: Partial<FeedPage>): FeedPage {
   return {
@@ -313,14 +313,19 @@ describe('WINDOW_OPTIONS', () => {
 
 // ── 增量刷新 ────────────────────────────────────────────────────────────
 
-function card(bvid: string): VideoCard {
+function card(id: string): FeedItem {
   return {
-    bvid,
-    title: bvid,
+    id,
+    kind: 'video',
+    title: id,
     cover: 'https://x',
+    coverW: 0,
+    coverH: 0,
+    imageCount: 0,
     durationText: '1:00',
     play: 0,
     danmaku: 0,
+    like: 0,
     pubdate: 1,
     upMid: 1,
     upName: 'up',
@@ -329,9 +334,9 @@ function card(bvid: string): VideoCard {
   };
 }
 
-function pageWith(bvids: string[], over: Partial<FeedPage> = {}): FeedPage {
+function pageWith(ids: string[], over: Partial<FeedPage> = {}): FeedPage {
   return {
-    items: bvids.map(card),
+    items: ids.map(card),
     nextOffset: 'next',
     hasMore: true,
     oldestPubTs: 1000,
@@ -352,7 +357,7 @@ describe('fetchNewer', () => {
 
     expect(fetchPage).toHaveBeenCalledTimes(1);
     expect(res.caughtUp).toBe(true);
-    expect(res.fresh.map((c) => c.bvid)).toEqual(['N1', 'N2']);
+    expect(res.fresh.map((c) => c.id)).toEqual(['N1', 'N2']);
   });
 
   it('整页都是新条目时继续往下翻', async () => {
@@ -370,7 +375,7 @@ describe('fetchNewer', () => {
     });
 
     expect(fetchPage).toHaveBeenCalledTimes(2);
-    expect(res.fresh.map((c) => c.bvid)).toEqual(['N1', 'N2', 'N3']);
+    expect(res.fresh.map((c) => c.id)).toEqual(['N1', 'N2', 'N3']);
     expect(res.caughtUp).toBe(true);
   });
 
@@ -395,7 +400,7 @@ describe('fetchNewer', () => {
       sleep: noSleep,
     });
     expect(res.caughtUp).toBe(true);
-    expect(res.fresh.map((c) => c.bvid)).toEqual(['N1']);
+    expect(res.fresh.map((c) => c.id)).toEqual(['N1']);
   });
 
   it('空页算追上，避免死循环', async () => {
@@ -452,7 +457,7 @@ describe('fetchNewer', () => {
       sleep: noSleep,
     });
     expect(fetchPage).toHaveBeenCalledTimes(2);
-    expect(res.fresh.map((c) => c.bvid)).toEqual(['N1']);
+    expect(res.fresh.map((c) => c.id)).toEqual(['N1']);
   });
 
   it('限速：只在页与页之间等待', async () => {
@@ -484,7 +489,7 @@ describe('fetchNewer', () => {
       fetchPage,
       known: new Set(['OLD1']),
       maxPages: 15,
-      onPage: (fresh) => seen.push(fresh.map((c) => c.bvid)),
+      onPage: (fresh) => seen.push(fresh.map((c) => c.id)),
       delayMs: 0,
       sleep: noSleep,
     });
@@ -523,7 +528,7 @@ describe('fetchNewer', () => {
   });
 
   it('中途暂停：已收到的新条目保留，且与"没追上"区分开', async () => {
-    const card = (bvid: string) => ({ bvid, pubdate: 1 }) as unknown as VideoCard;
+    const card = (id: string) => ({ id, pubdate: 1 }) as unknown as FeedItem;
     let n = 0;
     let delivered = 0;
     const fetchPage = vi
@@ -546,7 +551,7 @@ describe('fetchNewer', () => {
 
     expect(delivered).toBe(2);
     expect(res.pages).toBe(2);
-    expect(res.fresh.map((c) => c.bvid)).toEqual(['BV1', 'BV2']);
+    expect(res.fresh.map((c) => c.id)).toEqual(['BV1', 'BV2']);
     expect(res.paused).toBe(true);
     // 关键：paused 时 caughtUp 仍是 false，但调用方**不能**据此退回完整加载 ——
     // 两者语义不同（一个是"先停一下"，一个是"缓存有断层"）。
@@ -639,32 +644,37 @@ describe('shiftCheckpoints', () => {
 });
 
 describe('withinWindow', () => {
-  const card = (bvid: string, pubdate: number): VideoCard =>
+  const card = (id: string, pubdate: number): FeedItem =>
     ({
-      bvid,
+      id,
+      kind: 'video',
       title: '',
       cover: '',
-      durationText: '',
+      coverW: 0,
+      coverH: 0,
+      imageCount: 0,
+      durationText: null,
       play: 0,
       danmaku: 0,
+      like: 0,
       pubdate,
       upMid: 0,
       upName: '',
       upFace: '',
       url: '',
-    }) satisfies VideoCard;
+    }) satisfies FeedItem;
 
   const cards = [card('a', 1000), card('b', 500), card('c', 100)];
 
   it('只保留 pubdate >= cutoff 的卡片', () => {
-    expect(withinWindow(cards, 500).map((c) => c.bvid)).toEqual(['a', 'b']);
+    expect(withinWindow(cards, 500).map((c) => c.id)).toEqual(['a', 'b']);
     expect(withinWindow(cards, 1001)).toEqual([]);
   });
 
   it('边界值算在内（>= 而不是 >）', () => {
     // cutoff 是"窗口的起点"，比它新的才留下；正好等于边界的那条要保留
-    expect(withinWindow(cards, 100).map((c) => c.bvid)).toEqual(['a', 'b', 'c']);
-    expect(withinWindow(cards, 101).map((c) => c.bvid)).toEqual(['a', 'b']);
+    expect(withinWindow(cards, 100).map((c) => c.id)).toEqual(['a', 'b', 'c']);
+    expect(withinWindow(cards, 101).map((c) => c.id)).toEqual(['a', 'b']);
   });
 
   it('总是返回新数组（否则 setState 会因为引用相同而跳过渲染）', () => {
@@ -675,20 +685,25 @@ describe('withinWindow', () => {
 });
 
 describe('coversWindow', () => {
-  const card = (pubdate: number): VideoCard =>
+  const card = (pubdate: number): FeedItem =>
     ({
-      bvid: String(pubdate),
+      id: String(pubdate),
+      kind: 'video',
       title: '',
       cover: '',
-      durationText: '',
+      coverW: 0,
+      coverH: 0,
+      imageCount: 0,
+      durationText: null,
       play: 0,
       danmaku: 0,
+      like: 0,
       pubdate,
       upMid: 0,
       upName: '',
       upFace: '',
       url: '',
-    }) satisfies VideoCard;
+    }) satisfies FeedItem;
 
   it('最旧的一条越过边界 → 已覆盖', () => {
     expect(coversWindow([card(900), card(400), card(100)], 500)).toBe(true);

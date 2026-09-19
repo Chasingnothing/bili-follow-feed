@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { VideoCard } from './types';
+import type { FeedItem } from './types';
 import { useFeed } from './hooks/useFeed';
 import { WINDOW_OPTIONS } from './lib/feedWindow';
 import { useScrollToTopOnPage } from './hooks/useScrollToTopOnPage';
@@ -43,7 +43,7 @@ import {
   toggleCollapsed,
   SECTION_COLLAPSED_KEY,
 } from './lib/uiState';
-import VideoGrid from './components/VideoGrid';
+import FeedGrid from './components/FeedGrid';
 import GroupSection, { type MoveApi } from './components/GroupSection';
 import Sidebar from './components/Sidebar';
 import GroupPicker from './components/GroupPicker';
@@ -123,9 +123,9 @@ export default function App() {
 
   // ── 已读 ──────────────────────────────────────────────────────────────
 
-  const onOpen = useCallback((card: VideoCard) => {
+  const onOpen = useCallback((card: FeedItem) => {
     setReadSet((prev) => {
-      const next = markRead(prev, card.bvid);
+      const next = markRead(prev, card.id);
       if (!saveRead(next)) setStorageWarning(true);
       return next;
     });
@@ -133,7 +133,7 @@ export default function App() {
 
   const onMarkAllRead = useCallback(() => {
     setReadSet(() => {
-      const next = markAllRead(feed.cards.map((c) => c.bvid));
+      const next = markAllRead(feed.cards.map((c) => c.id));
       if (!saveRead(next)) setStorageWarning(true);
       return next;
     });
@@ -142,7 +142,7 @@ export default function App() {
   // ── 排序与筛选 ────────────────────────────────────────────────────────
 
   const collator = useCallback(
-    (a: VideoCard, b: VideoCard) => (sort === 'play' ? b.play - a.play : b.pubdate - a.pubdate),
+    (a: FeedItem, b: FeedItem) => (sort === 'play' ? b.play - a.play : b.pubdate - a.pubdate),
     [sort],
   );
 
@@ -162,7 +162,7 @@ export default function App() {
     [feed.cards, hiddenMids],
   );
   const visibleFlat = useMemo(
-    () => (filter === 'unread' ? sortedAll.filter((c) => !readSet.has(c.bvid)) : sortedAll),
+    () => (filter === 'unread' ? sortedAll.filter((c) => !readSet.has(c.id)) : sortedAll),
     [sortedAll, filter, readSet],
   );
 
@@ -179,7 +179,7 @@ export default function App() {
       new Map(
         buildSections(sortedAll, sectionGroups, membership).map((s) => [
           s.group.id,
-          s.videos.length,
+          s.items.length,
         ]),
       ),
     [sortedAll, sectionGroups, membership],
@@ -192,7 +192,7 @@ export default function App() {
     collapseSeeded.current = true;
     setCollapsedSections((prev) => {
       const next = new Set(prev);
-      for (const s of sections) if (s.videos.length === 0) next.add(s.group.id);
+      for (const s of sections) if (s.items.length === 0) next.add(s.group.id);
       saveCollapsed(SECTION_COLLAPSED_KEY, next);
       return next;
     });
@@ -616,8 +616,8 @@ export default function App() {
 
         {!feed.error && view === 'flat' && (
           <div ref={flatScroll.ref}>
-            <VideoGrid
-              cards={visibleFlat}
+            <FeedGrid
+              items={visibleFlat}
               readSet={readSet}
               lastVisit={lastVisit}
               onOpen={onOpen}
@@ -637,11 +637,11 @@ export default function App() {
             <GroupSection
               key={s.group.id}
               group={s.group}
-              videos={s.videos}
+              items={s.items}
               readSet={readSet}
               lastVisit={lastVisit}
               collapsed={collapsedSections.has(s.group.id)}
-              videoCountBeforeFilter={sectionTotals.get(s.group.id) ?? 0}
+              itemCountBeforeFilter={sectionTotals.get(s.group.id) ?? 0}
               page={pages[s.group.id] ?? 1}
               move={moveApiFor(s.group.id, idx)}
               onToggle={toggleSection}

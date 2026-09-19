@@ -1,7 +1,7 @@
-import type { VideoCard } from '../types';
+import type { FeedItem } from '../types';
 import type { Group } from '../lib/localGroups';
 import { useScrollToTopOnPage } from '../hooks/useScrollToTopOnPage';
-import VideoGrid from './VideoGrid';
+import FeedGrid from './FeedGrid';
 
 export interface MoveApi {
   onMove: (dir: -1 | 1) => void;
@@ -19,16 +19,16 @@ export interface MoveApi {
 
 interface Props {
   group: Group;
-  videos: VideoCard[];
+  items: FeedItem[];
   readSet: Set<string>;
   lastVisit: number;
   collapsed: boolean;
-  videoCountBeforeFilter: number;
+  itemCountBeforeFilter: number;
   /** 本板块当前页码，1-based */
   page: number;
   move: MoveApi;
   onToggle: (groupId: string) => void;
-  onOpen: (card: VideoCard) => void;
+  onOpen: (item: FeedItem) => void;
   onPageChange: (page: number) => void;
   /** 打开某个 UP 的分组菜单 */
   onPick: (upMid: number, el: HTMLElement) => void;
@@ -45,11 +45,11 @@ interface Props {
  */
 export default function GroupSection({
   group,
-  videos,
+  items,
   readSet,
   lastVisit,
   collapsed,
-  videoCountBeforeFilter,
+  itemCountBeforeFilter,
   page,
   move,
   onToggle,
@@ -57,7 +57,7 @@ export default function GroupSection({
   onPageChange,
   onPick,
 }: Props) {
-  const filteredOut = videoCountBeforeFilter - videos.length;
+  const filteredOut = itemCountBeforeFilter - items.length;
   // 翻页后把本板块滚回顶部 —— 否则页数少的那一页会让板块变矮、视野跳到下一个板块
   const { ref, bump } = useScrollToTopOnPage<HTMLElement>();
 
@@ -108,7 +108,7 @@ export default function GroupSection({
           <span className="bff-fold">{collapsed ? '+' : '−'}</span>
           <span className="bff-section-name">{group.name}</span>
           <span className="bff-section-count">
-            {videos.length}
+            {items.length}
             {filteredOut > 0 && (
               <span className="bff-section-hidden">（已筛掉 {filteredOut}）</span>
             )}
@@ -149,13 +149,13 @@ export default function GroupSection({
       </div>
 
       {!collapsed &&
-        (videos.length === 0 ? (
+        (items.length === 0 ? (
           <div className="bff-section-empty">
-            {videoCountBeforeFilter === 0 ? '这个分组最近没有更新' : '当前筛选下没有内容'}
+            {itemCountBeforeFilter === 0 ? '这个分组最近没有更新' : '当前筛选下没有内容'}
           </div>
         ) : (
-          <VideoGrid
-            cards={videos}
+          <FeedGrid
+            items={items}
             readSet={readSet}
             lastVisit={lastVisit}
             page={page}

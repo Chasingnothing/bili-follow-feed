@@ -7,9 +7,12 @@ const VISIT_KEY = 'bff:lastVisitAt';
  * 已读集合上限。
  *
  * `bff:readVideos` 是全部存储键里**唯一单调递增、没有天然上限**的一个 ——
- * 每点一个视频就加一条，永不清理。3000 条足以覆盖动态流能翻到的范围：
- * 更早的 bvid 不可能再出现在页面上，保留它们没有意义。
+ * 每点一条内容就加一条，永不清理。3000 条足以覆盖动态流能翻到的范围：
+ * 更早的 id 不可能再出现在页面上，保留它们没有意义。
  * 3000 × 约 17 字符 ≈ 50 KB，之后固定在 50 KB 不再增长（设计文档 §15.2）。
+ *
+ * 集合里存的是 `FeedItem.id`：视频是 `bvid`、图文是动态 `id_str`。
+ * 两者都在同一命名空间里不会撞车，所以**不需要**为图文另开一个键。
  */
 export const MAX_READ = 3000;
 
@@ -36,14 +39,14 @@ export function saveRead(s: Set<string>): boolean {
 }
 
 /** 返回新集合，不修改入参 */
-export function markRead(s: Set<string>, bvid: string): Set<string> {
+export function markRead(s: Set<string>, id: string): Set<string> {
   const next = new Set(s);
-  next.add(bvid);
+  next.add(id);
   return next;
 }
 
-export function markAllRead(bvids: string[]): Set<string> {
-  return new Set(bvids);
+export function markAllRead(ids: string[]): Set<string> {
+  return new Set(ids);
 }
 
 export function loadLastVisit(): number {

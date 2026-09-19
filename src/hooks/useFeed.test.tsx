@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { useFeed, type FeedApi, type FeedDeps } from './useFeed';
 import type { FeedDataSource } from '../data/source';
-import type { FeedPage, VideoCard } from '../types';
+import type { FeedPage, FeedItem } from '../types';
 import { cutoffFor } from '../lib/feedWindow';
 
 /**
@@ -67,14 +67,19 @@ async function settle(turns = 40) {
   }
 }
 
-function card(bvid: string, pubdate: number): VideoCard {
+function card(id: string, pubdate: number): FeedItem {
   return {
-    bvid,
-    title: bvid,
+    id,
+    kind: 'video',
+    title: id,
     cover: '',
+    coverW: 0,
+    coverH: 0,
+    imageCount: 0,
     durationText: '',
     play: 0,
     danmaku: 0,
+    like: 0,
     pubdate,
     upMid: 1,
     upName: 'up',
@@ -91,7 +96,7 @@ function scriptedPages(count: number, per: number, nowSec: number, stepSec: numb
   const pages: FeedPage[] = [];
   let t = nowSec;
   for (let p = 0; p < count; p++) {
-    const items: VideoCard[] = [];
+    const items: FeedItem[] = [];
     for (let i = 0; i < per; i++) {
       items.push(card(`BV${p}_${i}`, t));
       t -= stepSec;
@@ -175,7 +180,7 @@ describe('A. 冷启动', () => {
     await settle();
 
     expect(feed().cards).toHaveLength(5);
-    expect(new Set(feed().cards.map((c) => c.bvid)).size).toBe(5);
+    expect(new Set(feed().cards.map((c) => c.id)).size).toBe(5);
   });
 
   it('卡片按动态流顺序排列（新的在前）', async () => {
@@ -193,12 +198,34 @@ describe('A. 冷启动', () => {
 // ── B. 缓存与增量刷新（防抖） ───────────────────────────────────────────
 
 describe('B. 缓存命中', () => {
-  function seedCache(at: number, cards: VideoCard[], over: Record<string, unknown> = {}) {
+  function seedCache(at: number, cards: FeedItem[], over: Record<string, unknown> = {}) {
     localStorage.setItem(
       'bff:feedCache',
-      JSON.stringify({ at, hours: 24, cards, tailOffset: 'offX', ...over }),
+      // v: 2 = 当前卡片结构版本（FeedItem）。不带它会被当成老缓存丢弃。
+      JSON.stringify({ v: 2, at, hours: 24, cards, tailOffset: 'offX', ...over }),
     );
   }
+
+  it('⚠️ 卡片结构版本不符的缓存必须丢弃（老卡片没有 id/kind，读回来是坏的）', async () => {
+    // 模拟 v0.8.x 留下的缓存：卡片里是 bvid 而不是 id
+    localStorage.setItem(
+      'bff:feedCache',
+      JSON.stringify({
+        at: nowMs - 30_000,
+        hours: 24,
+        cards: [{ bvid: 'BVold', title: 'old', pubdate: nowSec() - 100, play: 0 }],
+        tailOffset: 'offX',
+      }),
+    );
+    const { source, calls } = sourceFrom(scriptedPages(1, 2, nowSec(), 4000));
+    const feed = mountFeed(quick({ source }));
+
+    await settle();
+
+    // 不能复用，必须重新拉
+    expect(calls.length).toBeGreaterThan(0);
+    expect(feed().cards.map((c) => c.id)).not.toContain('BVold');
+  });
 
   it('B1 缓存不到 60 秒 → 一个请求都不发', async () => {
     seedCache(nowMs - 30_000, [card('BVcached', nowSec() - 100)]);
@@ -208,7 +235,7 @@ describe('B. 缓存命中', () => {
     await settle();
 
     expect(calls).toEqual([]);
-    expect(feed().cards.map((c) => c.bvid)).toEqual(['BVcached']);
+    expect(feed().cards.map((c) => c.id)).toEqual(['BVcached']);
   });
 
   it('B2 缓存过期 → 只拉 1 页就停（撞见已知条目）', async () => {
@@ -229,7 +256,7 @@ describe('B. 缓存命中', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]).toBeNull();
     // 新条目插到最前面，旧的原样保留
-    expect(feed().cards.map((c) => c.bvid)).toEqual(['BVnew1', 'BVnew2', 'BVknown']);
+    expect(feed().cards.map((c) => c.id)).toEqual(['BVnew1', 'BVnew2', 'BVknown']);
   });
 
   it('缓存时间窗不匹配时不复用（否则会显示错窗口的内容）', async () => {
@@ -240,7 +267,7 @@ describe('B. 缓存命中', () => {
     await settle();
 
     expect(calls.length).toBeGreaterThan(0);
-    expect(feed().cards.map((c) => c.bvid)).not.toContain('BVcached');
+    expect(feed().cards.map((c) => c.id)).not.toContain('BVcached');
   });
 });
 
@@ -270,8 +297,8 @@ describe('C. 时间窗', () => {
     // 只增不减
     expect(feed().cards.length).toBeGreaterThan(cardsAt24);
     // 已有的没有被清掉
-    expect(feed().cards.slice(0, cardsAt24).map((c) => c.bvid)).toEqual(
-      pages.flatMap((p) => p.items).slice(0, cardsAt24).map((c) => c.bvid),
+    expect(feed().cards.slice(0, cardsAt24).map((c) => c.id)).toEqual(
+      pages.flatMap((p) => p.items).slice(0, cardsAt24).map((c) => c.id),
     );
     // 新增的请求都是"接着往下翻"（带游标），没有从第 1 页重来
     const later = calls.slice(callsAt24);
@@ -393,7 +420,13 @@ describe('E. 暂停', () => {
     const known = card('BVknown', nowSec() - 100);
     localStorage.setItem(
       'bff:feedCache',
-      JSON.stringify({ at: nowMs - 2 * HOUR_S * 1000, hours: 24, cards: [known], tailOffset: 'offX' }),
+      JSON.stringify({
+        v: 2,
+        at: nowMs - 2 * HOUR_S * 1000,
+        hours: 24,
+        cards: [known],
+        tailOffset: 'offX',
+      }),
     );
     const gate = gatedSleep();
     // 每页都是全新条目 → 增量会一直翻，正好停在 sleep 上
@@ -432,7 +465,7 @@ describe('F. 游标与缓存', () => {
     await settle();
 
     const cached = JSON.parse(localStorage.getItem('bff:feedCache')!) as {
-      cards: VideoCard[];
+      cards: FeedItem[];
       tailOffset: string | null;
       checkpoints?: unknown[];
     };
@@ -504,6 +537,6 @@ describe('G. 错误', () => {
     await settle();
 
     expect(feed().error).toBeNull();
-    expect(feed().cards.map((c) => c.bvid)).toEqual(['BVok']);
+    expect(feed().cards.map((c) => c.id)).toEqual(['BVok']);
   });
 });

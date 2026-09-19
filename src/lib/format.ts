@@ -1,4 +1,4 @@
-/** 播放量格式化：1.2万 / 1.2亿 */
+/** 数字格式化（播放量 / 点赞数）：1.2万 / 1.2亿 */
 export function formatPlay(n: number): string {
   if (n >= 1e8) return `${(n / 1e8).toFixed(1)}亿`;
   if (n >= 1e4) return `${(n / 1e4).toFixed(1)}万`;
@@ -7,7 +7,7 @@ export function formatPlay(n: number): string {
 
 /**
  * 相对时间。入参为**毫秒**时间戳。
- * 注意 VideoCard.pubdate 是秒级，调用处必须 ×1000。
+ * 注意 FeedItem.pubdate 是秒级，调用处必须 ×1000。
  */
 export function formatRelativeTime(ts: number, now: number = Date.now()): string {
   const diff = now - ts;

@@ -1,13 +1,13 @@
-import type { VideoCard as Card } from '../types';
+import type { FeedItem } from '../types';
 import { PAGE_SIZE, clampPage, pageSlice } from '../lib/pagination';
-import VideoCard from './VideoCard';
+import FeedCard from './FeedCard';
 import Pager from './Pager';
 
 interface Props {
-  cards: Card[];
+  items: FeedItem[];
   readSet: Set<string>;
   lastVisit: number;
-  onOpen: (card: Card) => void;
+  onOpen: (item: FeedItem) => void;
   /** 打开某个 UP 的分组菜单 */
   onPick: (upMid: number, el: HTMLElement) => void;
   /** 当前页码，1-based */
@@ -18,11 +18,11 @@ interface Props {
 /**
  * 卡片网格，**自带分页**。
  *
- * 分页不只是为了少滚动 —— 未分类板块能到 451 条，全渲染意味着 DOM 里同时挂着
- * 451 个卡片节点。分页把每次渲染压到 20 个。
+ * 分页不只是为了少滚动 —— 未分类板块能到几百条，全渲染意味着 DOM 里同时挂着
+ * 几百个卡片节点。分页把每次渲染压到 20 个。
  */
-export default function VideoGrid({
-  cards,
+export default function FeedGrid({
+  items,
   readSet,
   lastVisit,
   onOpen,
@@ -30,28 +30,28 @@ export default function VideoGrid({
   page,
   onPageChange,
 }: Props) {
-  if (cards.length === 0) {
-    return <div className="bff-empty">没有可显示的视频</div>;
+  if (items.length === 0) {
+    return <div className="bff-empty">没有可显示的内容</div>;
   }
 
   // 筛选/排序变化后原页码可能越界，这里夹一下
-  const current = clampPage(page, cards.length, PAGE_SIZE);
+  const current = clampPage(page, items.length, PAGE_SIZE);
 
   return (
     <>
       <div className="bff-grid">
-        {pageSlice(cards, current, PAGE_SIZE).map((c) => (
-          <VideoCard
-            key={c.bvid}
-            card={c}
-            read={readSet.has(c.bvid)}
+        {pageSlice(items, current, PAGE_SIZE).map((c) => (
+          <FeedCard
+            key={c.id}
+            item={c}
+            read={readSet.has(c.id)}
             isNew={c.pubdate * 1000 > lastVisit}
             onOpen={onOpen}
             onPick={onPick}
           />
         ))}
       </div>
-      <Pager page={current} total={cards.length} onChange={onPageChange} />
+      <Pager page={current} total={items.length} onChange={onPageChange} />
     </>
   );
 }

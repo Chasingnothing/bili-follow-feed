@@ -1,4 +1,4 @@
-import type { FeedPage, VideoCard } from '../types';
+import type { FeedPage, FeedItem } from '../types';
 
 export interface FillResult {
   pages: number;
@@ -87,7 +87,7 @@ export function cutoffFor(hours: number, nowMs: number = Date.now()): number {
 
 export interface IncrementalResult {
   /** 新增的条目（按动态流顺序，越靠前越新） */
-  fresh: VideoCard[];
+  fresh: FeedItem[];
   /** 是否追上了已知内容（false = 离线太久，调用方应退回完整加载） */
   caughtUp: boolean;
   pages: number;
@@ -106,7 +106,7 @@ export interface IncrementalOptions {
   /** 本地已有的 bvid */
   known: Set<string>;
   maxPages: number;
-  onPage?: (fresh: VideoCard[], index: number) => void;
+  onPage?: (fresh: FeedItem[], index: number) => void;
   delayMs: number;
   sleep: (ms: number) => Promise<void>;
   /** 每页开始前询问是否应中断（同 `fillToCutoff` 的 `shouldStop`） */
@@ -126,7 +126,7 @@ export interface IncrementalOptions {
 export async function fetchNewer(opts: IncrementalOptions): Promise<IncrementalResult> {
   const { fetchPage, known, maxPages, onPage, delayMs, sleep, shouldStop } = opts;
 
-  const fresh: VideoCard[] = [];
+  const fresh: FeedItem[] = [];
   let offset: string | null = null;
   let caughtUp = false;
   let paused = false;
@@ -142,7 +142,7 @@ export async function fetchNewer(opts: IncrementalOptions): Promise<IncrementalR
     const page = await fetchPage(offset);
     pages++;
 
-    const newOnes = page.items.filter((c) => !known.has(c.bvid));
+    const newOnes = page.items.filter((c) => !known.has(c.id));
     fresh.push(...newOnes);
     onPage?.(newOnes, pages);
 
@@ -217,9 +217,9 @@ export function shiftCheckpoints(checkpoints: PageCheckpoint[], by: number): Pag
  * 时间窗是【显示】范围；而缓存里保留的是【已拉到的】深度（通常更深）。
  * 两者分开的好处：缩小窗口不需要重新拉取，扩大窗口也不需要重拉已有的部分。
  *
- * 注意 `pubdate` 是**秒级**，与 `cutoffFor` 一致；`VideoCard.pubdate` 不是毫秒。
+ * 注意 `pubdate` 是**秒级**，与 `cutoffFor` 一致；`FeedItem.pubdate` 不是毫秒。
  */
-export function withinWindow(cards: VideoCard[], cutoffTs: number): VideoCard[] {
+export function withinWindow(cards: FeedItem[], cutoffTs: number): FeedItem[] {
   return cards.filter((c) => c.pubdate >= cutoffTs);
 }
 
@@ -231,7 +231,7 @@ export function withinWindow(cards: VideoCard[], cutoffTs: number): VideoCard[] 
  *
  * `cards` 为空时返回 false（什么都没拉，当然不算覆盖）。
  */
-export function coversWindow(cards: VideoCard[], cutoffTs: number): boolean {
+export function coversWindow(cards: FeedItem[], cutoffTs: number): boolean {
   if (cards.length === 0) return false;
   let oldest = Number.POSITIVE_INFINITY;
   for (const c of cards) if (c.pubdate < oldest) oldest = c.pubdate;

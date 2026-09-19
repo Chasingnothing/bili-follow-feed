@@ -1,6 +1,6 @@
 import type { FeedDataSource } from './source';
-import type { FeedPage, VideoCard } from '../types';
-import { mapDynamicToCard } from '../lib/mapDynamic';
+import type { FeedPage, FeedItem } from '../types';
+import { mapDynamicToItem } from '../lib/mapDynamic';
 
 const ENDPOINT = 'https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all';
 
@@ -36,10 +36,10 @@ export class InPageDataSource implements FeedDataSource {
       modules?: { module_author?: { pub_ts?: unknown } };
     }>;
 
-    const items = raw.map(mapDynamicToCard).filter((c): c is VideoCard => c !== null);
+    const items = raw.map(mapDynamicToItem).filter((c): c is FeedItem => c !== null);
 
-    // 覆盖范围的判据取自**全部**条目（含图文/转发），不能只看视频卡片：
-    // 一页可能一条视频都没有，那时无从判断翻到了哪个时间点，
+    // 覆盖范围的判据取自**全部**条目（含被过滤掉的转发/直播推广位），不能只看卡片：
+    // 一页可能一条可显示的内容都没有，那时无从判断翻到了哪个时间点，
     // 「翻到覆盖 N 天」的停止条件会失效。
     let oldest = Number.POSITIVE_INFINITY;
     for (const it of raw) {

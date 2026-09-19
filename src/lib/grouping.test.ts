@@ -1,21 +1,26 @@
 import { describe, it, expect } from 'vitest';
 import { buildSections } from './grouping';
 import type { Group } from './localGroups';
-import type { VideoCard } from '../types';
+import type { FeedItem } from '../types';
 
-function card(bvid: string, upMid: number, pubdate = 1000): VideoCard {
+function card(id: string, upMid: number, pubdate = 1000): FeedItem {
   return {
-    bvid,
-    title: `t-${bvid}`,
+    id,
+    kind: 'video',
+    title: `t-${id}`,
     cover: 'https://x',
+    coverW: 0,
+    coverH: 0,
+    imageCount: 0,
     durationText: '1:00',
     play: 1,
     danmaku: 0,
+    like: 0,
     pubdate,
     upMid,
     upName: `up${upMid}`,
     upFace: 'https://x',
-    url: `https://www.bilibili.com/video/${bvid}`,
+    url: `https://www.bilibili.com/video/${id}`,
   };
 }
 
@@ -35,7 +40,7 @@ describe('buildSections', () => {
       [SPECIAL, MOVIE, TECH, UNCAT],
       { '101': ['bili-1'], '202': ['bili-2'] },
     );
-    const byId = Object.fromEntries(sections.map((s) => [s.group.id, s.videos.map((v) => v.bvid)]));
+    const byId = Object.fromEntries(sections.map((s) => [s.group.id, s.items.map((v) => v.id)]));
     expect(byId['bili-1']).toEqual(['BV1']);
     expect(byId['bili-2']).toEqual(['BV2']);
     expect(byId['uncategorized']).toEqual([]);
@@ -47,7 +52,7 @@ describe('buildSections', () => {
       [SPECIAL, MOVIE, TECH, UNCAT],
       { '101': ['special', 'bili-1'] },
     );
-    const byId = Object.fromEntries(sections.map((s) => [s.group.id, s.videos.length]));
+    const byId = Object.fromEntries(sections.map((s) => [s.group.id, s.items.length]));
     expect(byId['special']).toBe(1);
     expect(byId['bili-1']).toBe(1);
     expect(byId['bili-2']).toBe(0);
@@ -55,25 +60,25 @@ describe('buildSections', () => {
 
   it('membership 里没有的 UP 归入未分类', () => {
     const sections = buildSections([card('BV1', 999)], [SPECIAL, UNCAT], {});
-    expect(sections.find((s) => s.group.id === 'uncategorized')?.videos).toHaveLength(1);
+    expect(sections.find((s) => s.group.id === 'uncategorized')?.items).toHaveLength(1);
   });
 
   it('membership 为空数组时归入未分类', () => {
     const sections = buildSections([card('BV1', 101)], [UNCAT], { '101': [] });
-    expect(sections[0].videos).toHaveLength(1);
+    expect(sections[0].items).toHaveLength(1);
   });
 
   it('指向已删除分组的脏引用归入未分类，视频不丢失', () => {
     const sections = buildSections([card('BV1', 101)], [SPECIAL, UNCAT], {
       '101': ['bili-deleted'],
     });
-    expect(sections.find((s) => s.group.id === 'uncategorized')?.videos[0].bvid).toBe('BV1');
+    expect(sections.find((s) => s.group.id === 'uncategorized')?.items[0].id).toBe('BV1');
   });
 
   it('没有视频的分组仍然产出 Section', () => {
     const sections = buildSections([], [SPECIAL, MOVIE, TECH, UNCAT], {});
     expect(sections).toHaveLength(4);
-    expect(sections.every((s) => s.videos.length === 0)).toBe(true);
+    expect(sections.every((s) => s.items.length === 0)).toBe(true);
   });
 
   it('按 order 排序：special 最前、uncategorized 最后', () => {
@@ -101,14 +106,14 @@ describe('buildSections', () => {
       { '101': ['uncategorized'] },
       (a, b) => b.pubdate - a.pubdate,
     );
-    expect(sections[0].videos.map((v) => v.bvid)).toEqual(['BV2', 'BV3', 'BV1']);
+    expect(sections[0].items.map((v) => v.id)).toEqual(['BV2', 'BV3', 'BV1']);
   });
 
   it('不传 collator 时保持输入顺序', () => {
     const sections = buildSections([card('BV1', 101, 100), card('BV2', 101, 300)], [UNCAT], {
       '101': ['uncategorized'],
     });
-    expect(sections[0].videos.map((v) => v.bvid)).toEqual(['BV1', 'BV2']);
+    expect(sections[0].items.map((v) => v.id)).toEqual(['BV1', 'BV2']);
   });
 
   it('空 groups 返回空数组', () => {

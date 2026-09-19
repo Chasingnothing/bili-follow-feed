@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { FeedPage, VideoCard } from '../types';
+import type { FeedPage, FeedItem } from '../types';
 import { InPageDataSource } from '../data/inPage';
 import type { FeedDataSource } from '../data/source';
 import {
@@ -51,7 +51,7 @@ export interface MoreProgress {
 }
 
 export interface FeedApi {
-  cards: VideoCard[];
+  cards: FeedItem[];
   hasMore: boolean;
   /** 首屏加载中（无缓存可用时才会出现） */
   loading: boolean;
@@ -105,9 +105,17 @@ export interface FeedDeps {
 }
 
 interface FeedCache {
+  /**
+   * 缓存结构版本。
+   *
+   * 加它是因为卡片模型从 `VideoCard`（`bvid`）泛化成了 `FeedItem`（`id` + `kind`）：
+   * 老缓存里的卡片没有 `id`，读回来会让 React key 变成 undefined、已读状态对不上。
+   * 动态流本来就能重新拉，所以直接让旧缓存失效是最省事也最安全的做法。
+   */
+  v: number;
   at: number;
   hours: number;
-  cards: VideoCard[];
+  cards: FeedItem[];
   /** 已加载到的尾部游标。**必须一起存** —— 否则缓存命中后「加载更多」会从第 1 页重来 */
   tailOffset: string | null;
   /**
@@ -116,6 +124,9 @@ interface FeedCache {
    */
   checkpoints?: PageCheckpoint[];
 }
+
+/** 卡片模型泛化后从 1 提到 2 */
+const CACHE_VERSION = 2;
 
 /** 手动「加载更多」的页数选项 */
 export const LOAD_MORE_OPTIONS = [1, 3, 5, 10];
@@ -151,7 +162,7 @@ export function useFeed(overrides: Partial<FeedDeps> = {}): FeedApi {
   }
   const { source, sleep, delayMs, flushMs, freshMs, now } = depsRef.current;
 
-  const [cards, setCards] = useState<VideoCard[]>([]);
+  const [cards, setCards] = useState<FeedItem[]>([]);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [filling, setFilling] = useState(false);
@@ -167,7 +178,7 @@ export function useFeed(overrides: Partial<FeedDeps> = {}): FeedApi {
 
   const started = useRef(false);
   const tailOffset = useRef<string | null>(null);
-  const cardsRef = useRef<VideoCard[]>([]);
+  const cardsRef = useRef<FeedItem[]>([]);
   const hoursRef = useRef(windowHours);
   /** 加载代次：切换时间窗会启动新加载，旧的那次应丢弃自己的结果 */
   const gen = useRef(0);
@@ -202,14 +213,14 @@ export function useFeed(overrides: Partial<FeedDeps> = {}): FeedApi {
    * 两者分开之后：缩小窗口不需要重新拉取（只是显示变少），扩大窗口也不需要
    * 重拉已有的部分（从游标接着往下追加就行）。
    */
-  const windowFilter = useCallback((all: VideoCard[]) => {
+  const windowFilter = useCallback((all: FeedItem[]) => {
     const cutoff = visibleCutoff(hoursRef.current, manualFloorRef.current, now());
     // 「仅首页」(0) 时 visibleCutoff 返回 -Infinity，等价于不过滤
     return withinWindow(all, cutoff);
   }, []);
 
   const applyCards = useCallback(
-    (next: VideoCard[]) => {
+    (next: FeedItem[]) => {
       cardsRef.current = next;
       setCards(windowFilter(next));
     },
@@ -266,6 +277,7 @@ export function useFeed(overrides: Partial<FeedDeps> = {}): FeedApi {
       ? offsetForKept(checkpointsRef.current, MAX_CACHED_CARDS)
       : tailOffset.current;
     writeJson(CACHE_KEY, {
+      v: CACHE_VERSION,
       at: now(),
       hours,
       cards: cardsRef.current.slice(0, MAX_CACHED_CARDS),
@@ -282,10 +294,10 @@ export function useFeed(overrides: Partial<FeedDeps> = {}): FeedApi {
    */
   const applyPage = useCallback(
     (page: FeedPage) => {
-      const added: VideoCard[] = [];
+      const added: FeedItem[] = [];
       for (const c of page.items) {
-        if (seenRef.current.has(c.bvid)) continue;
-        seenRef.current.add(c.bvid);
+        if (seenRef.current.has(c.id)) continue;
+        seenRef.current.add(c.id);
         added.push(c);
       }
       if (added.length > 0) cardsRef.current = [...cardsRef.current, ...added];
@@ -405,7 +417,7 @@ export function useFeed(overrides: Partial<FeedDeps> = {}): FeedApi {
    * 漏了这一步会在截断时选中一个越过截断点的检查点 → 恢复后**漏掉中间几条**。
    */
   const mergeFresh = useCallback(
-    (fresh: VideoCard[]) => {
+    (fresh: FeedItem[]) => {
       if (fresh.length === 0) return;
       applyCards([...fresh, ...cardsRef.current]);
       checkpointsRef.current = shiftCheckpoints(checkpointsRef.current, fresh.length);
@@ -418,7 +430,7 @@ export function useFeed(overrides: Partial<FeedDeps> = {}): FeedApi {
    * 追到上限还没撞见（离线太久）就返回 false，由调用方退回完整加载。
    */
   const incremental = useCallback(
-    async (cachedCards: VideoCard[], myGen: number): Promise<'merged' | 'fallback'> => {
+    async (cachedCards: FeedItem[], myGen: number): Promise<'merged' | 'fallback'> => {
       pauseRequestedRef.current = false;
       setPaused(false);
       setRefreshing(true);
@@ -426,7 +438,7 @@ export function useFeed(overrides: Partial<FeedDeps> = {}): FeedApi {
       try {
         res = await fetchNewer({
           fetchPage: (offset) => source.fetchPage(offset),
-          known: new Set(cachedCards.map((c) => c.bvid)),
+          known: new Set(cachedCards.map((c) => c.id)),
           maxPages: MAX_INCREMENTAL_PAGES,
           delayMs,
           sleep,
@@ -467,7 +479,14 @@ export function useFeed(overrides: Partial<FeedDeps> = {}): FeedApi {
 
       if (!force) {
         const cached = readJson<FeedCache | null>(CACHE_KEY, null);
-        if (cached && cached.hours === hours && Array.isArray(cached.cards) && cached.cards.length) {
+        if (
+          cached &&
+          // 结构版本不符就直接丢弃 —— 老卡片没有 id/kind，读回来是坏的
+          cached.v === CACHE_VERSION &&
+          cached.hours === hours &&
+          Array.isArray(cached.cards) &&
+          cached.cards.length
+        ) {
           // ① 先把缓存铺上：刷新页面不白屏，也不重跑 10 页
           applyCards(cached.cards);
           tailOffset.current = cached.tailOffset ?? null;
@@ -475,7 +494,7 @@ export function useFeed(overrides: Partial<FeedDeps> = {}): FeedApi {
           checkpointsRef.current = cached.checkpoints ?? [];
           // 深度信息也要恢复，否则「扩大窗口」会以为自己只有第一页
           pagesRef.current = cached.checkpoints?.length ?? 0;
-          seenRef.current = new Set(cached.cards.map((c) => c.bvid));
+          seenRef.current = new Set(cached.cards.map((c) => c.id));
           setCovered(true);
           setHasMore(true);
           setLoading(false);
@@ -584,8 +603,8 @@ export function useFeed(overrides: Partial<FeedDeps> = {}): FeedApi {
 
             const page = await source.fetchPage(tailOffset.current);
 
-            const seen = new Set(cardsRef.current.map((c) => c.bvid));
-            const added = page.items.filter((c) => !seen.has(c.bvid));
+            const seen = new Set(cardsRef.current.map((c) => c.id));
+            const added = page.items.filter((c) => !seen.has(c.id));
             if (added.length > 0) {
               // 手动加载来的内容**必须能看见** —— 放宽显示下限。
               // 否则窗口盖满之后每次点「加载更多」拉回的都是窗口外的旧内容，全被滤掉，

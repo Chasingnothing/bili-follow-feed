@@ -1,7 +1,9 @@
 import type { FeedItem } from '../types';
 import type { Group } from '../lib/localGroups';
+import { PAGE_SIZE, clampPage } from '../lib/pagination';
 import { useScrollToTopOnPage } from '../hooks/useScrollToTopOnPage';
 import FeedGrid from './FeedGrid';
+import Pager from './Pager';
 
 export interface MoveApi {
   onMove: (dir: -1 | 1) => void;
@@ -15,6 +17,22 @@ export interface MoveApi {
   onDragOver: (edge: 'before' | 'after') => void;
   onDrop: () => void;
   onDragEnd: () => void;
+}
+
+/** 模式 2 专有的板块操作（「拉取更多」/「多看一条」/ 计数器） */
+export interface UpPullApi {
+  /** 该板块的 UP 总数 —— 计数器的分母 */
+  upTotal: number;
+  /** 其中已有缓存的 UP 数 —— 分子 */
+  upCached: number;
+  /** 当前层数，1-based */
+  layer: number;
+  /** 层数上限 */
+  maxLayer: number;
+  /** 正在批量拉取时的进度；没在拉就是 null */
+  progress: { done: number; total: number } | null;
+  onPullMore: () => void;
+  onMoreLayer: () => void;
 }
 
 interface Props {
@@ -32,6 +50,8 @@ interface Props {
   onPageChange: (page: number) => void;
   /** 打开某个 UP 的分组菜单 */
   onPick: (upMid: number, el: HTMLElement) => void;
+  /** 只有模式 2 会传 */
+  upPull?: UpPullApi;
 }
 
 /**
@@ -56,10 +76,12 @@ export default function GroupSection({
   onOpen,
   onPageChange,
   onPick,
+  upPull,
 }: Props) {
   const filteredOut = itemCountBeforeFilter - items.length;
   // 翻页后把本板块滚回顶部 —— 否则页数少的那一页会让板块变矮、视野跳到下一个板块
   const { ref, bump } = useScrollToTopOnPage<HTMLElement>();
+  const current = clampPage(page, items.length, PAGE_SIZE);
 
   const sectionClass = [
     'bff-section',
@@ -148,25 +170,79 @@ export default function GroupSection({
         </button>
       </div>
 
-      {!collapsed &&
-        (items.length === 0 ? (
-          <div className="bff-section-empty">
-            {itemCountBeforeFilter === 0 ? '这个分组最近没有更新' : '当前筛选下没有内容'}
-          </div>
-        ) : (
-          <FeedGrid
-            items={items}
-            readSet={readSet}
-            lastVisit={lastVisit}
-            page={page}
-            onPageChange={(p) => {
-              onPageChange(p);
-              bump();
-            }}
-            onOpen={onOpen}
-            onPick={onPick}
-          />
-        ))}
+      {!collapsed && (
+        <>
+          {items.length === 0 ? (
+            <div className="bff-section-empty">
+              {itemCountBeforeFilter === 0
+                ? upPull
+                  ? '还没有拉取这个板块的内容'
+                  : '这个分组最近没有更新'
+                : '当前筛选下没有内容'}
+            </div>
+          ) : (
+            <FeedGrid
+              items={items}
+              readSet={readSet}
+              lastVisit={lastVisit}
+              page={current}
+              onOpen={onOpen}
+              onPick={onPick}
+            />
+          )}
+
+          {/*
+           * 模式 2：两个按钮在**页码条上方**（用户明确要求）。
+           * 「拉取更多」= 扩大 UP 覆盖；「多看一条」= 加深层数，后者不发任何请求。
+           */}
+          {upPull && (
+            <div className="bff-upbar">
+              <button
+                type="button"
+                className="bff-upbar-go"
+                onClick={upPull.onPullMore}
+                disabled={upPull.progress !== null}
+                title="把这个板块里还没拉过的 UP 拉一遍"
+              >
+                {upPull.progress
+                  ? `拉取中 ${upPull.progress.done}/${upPull.progress.total}…`
+                  : '⟳ 拉取更多'}
+              </button>
+
+              <span className="bff-upcount" title="分子是已经有缓存的 UP 数，分母是这个板块的 UP 总数">
+                已保存 {upPull.upCached} / {upPull.upTotal} 个 UP
+              </span>
+
+              <button
+                type="button"
+                className="bff-upbar-go"
+                onClick={upPull.onMoreLayer}
+                disabled={upPull.layer >= upPull.maxLayer}
+                title={
+                  upPull.layer >= upPull.maxLayer
+                    ? `每个 UP 最多保留 ${upPull.maxLayer} 条`
+                    : '每个 UP 多显示一条（读缓存，不发请求）'
+                }
+              >
+                {upPull.layer >= upPull.maxLayer
+                  ? '已全部显示'
+                  : `⤓ 多看一条（${upPull.layer}/${upPull.maxLayer}）`}
+              </button>
+            </div>
+          )}
+
+          {items.length > 0 && (
+            <Pager
+              page={current}
+              total={items.length}
+              onChange={(p) => {
+                onPageChange(p);
+                bump();
+              }}
+            />
+          )}
+        </>
+      )}
     </section>
   );
 }

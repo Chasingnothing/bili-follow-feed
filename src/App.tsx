@@ -27,6 +27,18 @@ import {
   type Group,
 } from './lib/localGroups';
 import { buildSections } from './lib/grouping';
+import { buildUpSections, MAX_LAYER } from './lib/upSections';
+import { fetchUpToN, fetchManyUps, type BatchResult } from './lib/upFetch';
+import { InPageDataSource } from './data/inPage';
+import {
+  loadAllItems,
+  saveUpItems,
+  cachedUsage,
+  touchUp,
+  MAX_PER_UP,
+} from './lib/upVideoCache';
+import { PAGE_SIZE, clampPage } from './lib/pagination';
+import Pager from './components/Pager';
 import { HIDDEN_ID } from './lib/upIndex';
 import {
   loadRead,
@@ -42,6 +54,11 @@ import {
   saveCollapsed,
   toggleCollapsed,
   SECTION_COLLAPSED_KEY,
+  loadMode,
+  saveMode,
+  loadUpLayers,
+  saveUpLayers,
+  type FeedMode,
 } from './lib/uiState';
 import FeedGrid from './components/FeedGrid';
 import GroupSection, { type MoveApi } from './components/GroupSection';
@@ -76,6 +93,42 @@ const QUOTA_BYTES = 5 * 1024 * 1024;
 /** 平铺视图在页码表里的 key */
 const FLAT_KEY = '__flat__';
 
+// ── 模式 2「拉取更多」的节奏 ────────────────────────────────────────────
+
+/** 页与页之间的等待（`feed/space` 一页 12 条，节奏和动态流一致） */
+const PULL_PAGE_DELAY_MS = 400;
+/** 单个 UP 最多翻几页 —— 一页通常就够，但图文/转发为主的 UP 要接着翻 */
+const MAX_PAGES_PER_UP = 3;
+/** 每拉多少个 UP 歇一下（防风控） */
+const PULL_BATCH = 20;
+/** 歇多久 */
+const PULL_BATCH_PAUSE_MS = 2000;
+/** 这么久之内拉过的 UP 就跳过，避免连点两次白跑一整轮 */
+const PULL_FRESH_MS = 10 * 60 * 1000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * 模式 2 里板块不允许拖动排序。
+ *
+ * 不是"忘了做"：模式 2 的板块顺序跟随本地分组顺序，而拖拽排序要写 `reorderGroups`
+ * 去改分组本身 —— 那会连带影响侧边栏和模式 1 的板块顺序。为了避免一个拖动把
+ * 另一个视图的布局也搅了，模式 2 先只读。
+ */
+const NO_MOVE: MoveApi = {
+  onMove: () => {},
+  canMoveUp: false,
+  canMoveDown: false,
+  dragging: false,
+  dropEdge: null,
+  onDragStart: () => {},
+  onDragOver: () => {},
+  onDrop: () => {},
+  onDragEnd: () => {},
+};
+
 export default function App() {
   const feed = useFeed();
   const followings = useFollowings();
@@ -109,6 +162,26 @@ export default function App() {
   const [dragId, setDragId] = useState<string | null>(null);
   /** 拖动悬停位置：落在哪个板块的上方还是下方 */
   const [dropEdge, setDropEdge] = useState<{ id: string; edge: 'before' | 'after' } | null>(null);
+
+  // ── 模式 2（UP 主拉取）────────────────────────────────────────────────
+
+  const [mode, setMode] = useState<FeedMode>(() => loadMode());
+  /** 每个板块的层数（每个 UP 显示前几条）。落盘，刷新后原样恢复 */
+  const [upLayers, setUpLayers] = useState<Record<string, number>>(() => loadUpLayers());
+  /**
+   * 缓存内容被改动过的计数。
+   *
+   * `loadAllItems()` 要扫一遍 localStorage 并逐个解析，不能每次渲染都跑，
+   * 所以用它当依赖：只有真的拉过/揭示过才重新读。
+   */
+  const [upCacheVersion, setUpCacheVersion] = useState(0);
+  /** 正在批量拉取的板块 id → 进度 */
+  const [pulling, setPulling] = useState<Record<string, { done: number; total: number }>>({});
+  /** 暂停后记下"怎么继续"，`resumePull` 直接调用 */
+  const upResumeRef = useRef<(() => void) | null>(null);
+  const upPauseRef = useRef(false);
+  /** 一次「拉取更多」的汇总结果，结束后弹提示 */
+  const [upNotice, setUpNotice] = useState<string | null>(null);
 
   const lastVisit = useRef(loadLastVisit()).current;
   const collapseSeeded = useRef(false);
@@ -201,6 +274,127 @@ export default function App() {
       ),
     [sortedAll, sectionGroups, membership],
   );
+
+  // ── 模式 2 的派生数据与操作 ───────────────────────────────────────────
+
+  /** 每个 UP 已缓存的条目。整表读一次，组件里不再逐个读 localStorage */
+  const upCache = useMemo(() => loadAllItems(), [upCacheVersion]);
+
+  const upSections = useMemo(
+    () =>
+      buildUpSections({
+        groups,
+        membership,
+        followings: followings.list,
+        layers: upLayers,
+        cache: upCache,
+        collator,
+      }),
+    [groups, membership, followings.list, upLayers, upCache, collator],
+  );
+
+  /** 模式 2 的条目也过一遍和模式 1 相同的筛选（类型 / 未读），否则工具条上的控件会骗人 */
+  const filterForUpMode = useCallback(
+    (items: FeedItem[]) =>
+      items
+        .filter((c) => typeFilter === 'all' || c.kind === typeFilter)
+        .filter((c) => filter !== 'unread' || !readSet.has(c.id)),
+    [typeFilter, filter, readSet],
+  );
+
+  const changeMode = useCallback((m: FeedMode) => {    setMode(m);
+    saveMode(m);
+    // 切模式时把暂停状态清掉，否则「继续」会去续一个已经不该跑的任务
+    upPauseRef.current = false;
+    upResumeRef.current = null;
+  }, []);
+
+  const changeLayer = useCallback((groupId: string, next: number) => {
+    setUpLayers((prev) => {
+      const merged = { ...prev, [groupId]: next };
+      saveUpLayers(merged);
+      return merged;
+    });
+    // 揭示缓存内容也算"用过"这些 UP，否则它们会因为"很久没发请求"被先淘汰
+    setUpCacheVersion((v) => v + 1);
+  }, []);
+
+  /**
+   * 「拉取更多」：把这个板块**全部** UP 拉一遍（每 20 个歇一下，可暂停）。
+   *
+   * 已拉过的也会重新拉（用户选的行为），但 `isFresh` 会跳过刚拉过的，
+   * 避免连点两次白跑一整轮。
+   */
+  const pullMore = useCallback(
+    (groupId: string, mids: number[]) => {
+      if (pulling[groupId]) return;
+      const source = new InPageDataSource();
+      upPauseRef.current = false;
+      // 一次性取出"上次拉取时间"，避免在循环里为每个 UP 读一次 localStorage
+      const fetchedAtMap = new Map(cachedUsage().map((e) => [e.mid, e.at]));
+
+      const run = (targets: number[]) => {
+        setPulling((p) => ({ ...p, [groupId]: { done: 0, total: targets.length } }));
+        void fetchManyUps({
+          mids: targets,
+          want: MAX_PER_UP,
+          isFresh: (mid) => {
+            const at = fetchedAtMap.get(mid) ?? 0;
+            return at > 0 && Date.now() - at < PULL_FRESH_MS;
+          },
+          fetchUp: (mid) =>
+            fetchUpToN({
+              mid,
+              want: MAX_PER_UP,
+              fetchPage: (offset) => source.fetchUpSpace(mid, offset),
+              maxPages: MAX_PAGES_PER_UP,
+              delayMs: PULL_PAGE_DELAY_MS,
+              sleep,
+              shouldStop: () => upPauseRef.current,
+            }),
+          onFetched: (mid, items) => {
+            saveUpItems(mid, items, Date.now());
+            setUpCacheVersion((v) => v + 1);
+          },
+          onProgress: (done, total) =>
+            setPulling((p) => ({ ...p, [groupId]: { done, total } })),
+          pauseEvery: PULL_BATCH,
+          pauseMs: PULL_BATCH_PAUSE_MS,
+          sleep,
+          shouldStop: () => upPauseRef.current,
+        }).then((res: BatchResult) => {
+          setPulling((p) => {
+            const next = { ...p };
+            delete next[groupId];
+            return next;
+          });
+          setUpCacheVersion((v) => v + 1);
+          if (res.paused) {
+            // 续拉从"已处理"处接着走 —— 跳过/失败/空结果的 UP 也算处理过了
+            upResumeRef.current = () => run(targets.slice(res.processed));
+            setUpNotice('已暂停拉取；点「继续」接着拉');
+          } else {
+            upResumeRef.current = null;
+            const parts = [`拉取完成：成功 ${res.fetched} 个 UP`];
+            if (res.skipped > 0) parts.push(`跳过 ${res.skipped} 个（刚拉过）`);
+            if (res.failed > 0) parts.push(`失败 ${res.failed} 个`);
+            setUpNotice(parts.join('；'));
+          }
+        });
+      };
+
+      run(mids);
+    },
+    [pulling, upCache],
+  );
+
+  const resumePull = useCallback(() => {
+    upPauseRef.current = false;
+    const fn = upResumeRef.current;
+    upResumeRef.current = null;
+    setUpNotice(null);
+    fn?.();
+  }, []);
 
   // ── 空板块默认折叠（只在首次拿到分区时做一次）─────────────────────────
 
@@ -523,6 +717,26 @@ export default function App() {
         <div className="bff-bar">
           <strong>只看关注</strong>
 
+          {/* 模式切换：「动态流」是全局时间线，「UP 主拉取」是按板块逐个 UP 补内容 */}
+          <span className="bff-typeseg" role="group" aria-label="切换模式">
+            {(
+              [
+                ['feed', '动态流'],
+                ['upPull', 'UP 主拉取'],
+              ] as Array<[FeedMode, string]>
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={mode === key ? 'is-on' : ''}
+                aria-pressed={mode === key}
+                onClick={() => changeMode(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </span>
+
           <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
             <option value="latest">最新发布</option>
             {/* 图文没有播放量，按类型换个说法，否则标签是骗人的 */}
@@ -556,23 +770,28 @@ export default function App() {
             <option value="unread">未读</option>
           </select>
 
-          <select value={view} onChange={(e) => setView(e.target.value as ViewMode)}>
-            <option value="grouped">分组视图</option>
-            <option value="flat">平铺视图</option>
-          </select>
+          {/* 模式 2 天然是分组结构，也没有时间窗概念（按 UP 补内容，与"多久以前"无关） */}
+          {mode === 'feed' && (
+            <>
+              <select value={view} onChange={(e) => setView(e.target.value as ViewMode)}>
+                <option value="grouped">分组视图</option>
+                <option value="flat">平铺视图</option>
+              </select>
 
-          <select
-            value={feed.windowHours}
-            onChange={(e) => feed.setWindowHours(Number(e.target.value))}
-            disabled={feed.loading}
-            title="翻页加载到覆盖多久之前的内容。翻页越多越慢，但分组板块越完整"
-          >
-            {WINDOW_OPTIONS.map((o) => (
-              <option key={o.hours} value={o.hours}>
-                {o.hours === 0 ? '仅加载首页' : `加载到 ${o.label}前`}
-              </option>
-            ))}
-          </select>
+              <select
+                value={feed.windowHours}
+                onChange={(e) => feed.setWindowHours(Number(e.target.value))}
+                disabled={feed.loading}
+                title="翻页加载到覆盖多久之前的内容。翻页越多越慢，但分组板块越完整"
+              >
+                {WINDOW_OPTIONS.map((o) => (
+                  <option key={o.hours} value={o.hours}>
+                    {o.hours === 0 ? '仅加载首页' : `加载到 ${o.label}前`}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
 
           <button type="button" onClick={onMarkAllRead} disabled={feed.cards.length === 0}>
             全部标记已读
@@ -652,9 +871,68 @@ export default function App() {
           </div>
         )}
 
+        {upNotice && (
+          <div className="bff-notice">
+            {upNotice}
+            {upResumeRef.current && (
+              <button type="button" onClick={resumePull}>
+                继续
+              </button>
+            )}
+            <button type="button" onClick={() => setUpNotice(null)}>
+              ×
+            </button>
+          </div>
+        )}
+
         {feed.error && <div className="bff-empty">接口出错：{feed.error}</div>}
 
-        {!feed.error && view === 'flat' && (
+        {mode === 'upPull' && upSections.length === 0 && (
+          <div className="bff-empty">
+            模式 2 只显示<strong>已归类</strong>的分组 —— 「未分类」里那几百个 UP 不在这里逐个拉。
+            <br />
+            先去左侧把他们分到几个分组里，再回到这个模式。
+          </div>
+        )}
+
+        {/*
+         * 模式 2：板块由「该分组的 UP 列表 → 各自的缓存」组装，与模式 1 的数据流相反，
+         * 所以走另一条渲染分支，不复用 sections。
+         */}
+        {mode === 'upPull' &&
+          upSections.map((s) => (
+            <GroupSection
+              key={s.group.id}
+              group={s.group}
+              items={filterForUpMode(s.items)}
+              readSet={readSet}
+              lastVisit={lastVisit}
+              collapsed={collapsedSections.has(s.group.id)}
+              itemCountBeforeFilter={s.items.length}
+              page={pages[s.group.id] ?? 1}
+              // 模式 2 不允许拖动排序（没有 moveApi），传一个禁用的空实现
+              move={NO_MOVE}
+              onToggle={toggleSection}
+              onOpen={onOpen}
+              onPageChange={(p) => setPage(s.group.id, p)}
+              onPick={pickFor}
+              upPull={{
+                upTotal: s.ups.length,
+                upCached: s.cachedCount,
+                layer: s.layer,
+                maxLayer: MAX_LAYER,
+                progress: pulling[s.group.id] ?? null,
+                onPullMore: () => pullMore(s.group.id, s.ups.map((u) => u.mid)),
+                onMoreLayer: () => {
+                  changeLayer(s.group.id, Math.min(MAX_LAYER, s.layer + 1));
+                  // 揭示时更新"使用时间"，否则正在看的板块反而会被先淘汰
+                  for (const u of s.ups) touchUp(u.mid, Date.now());
+                },
+              }}
+            />
+          ))}
+
+        {mode === 'feed' && !feed.error && view === 'flat' && (
           <div ref={flatScroll.ref}>
             <FeedGrid
               items={visibleFlat}
@@ -663,7 +941,11 @@ export default function App() {
               onOpen={onOpen}
               onPick={pickFor}
               page={pages[FLAT_KEY] ?? 1}
-              onPageChange={(p) => {
+            />
+            <Pager
+              page={clampPage(pages[FLAT_KEY] ?? 1, visibleFlat.length, PAGE_SIZE)}
+              total={visibleFlat.length}
+              onChange={(p) => {
                 setPage(FLAT_KEY, p);
                 flatScroll.bump();
               }}
@@ -671,7 +953,8 @@ export default function App() {
           </div>
         )}
 
-        {!feed.error &&
+        {mode === 'feed' &&
+          !feed.error &&
           view === 'grouped' &&
           sections.map((s, idx) => (
             <GroupSection

@@ -112,6 +112,8 @@ export interface BatchResult {
   fetched: number;
   skipped: number;
   failed: number;
+  /** 一共处理了多少个 UP（含跳过、失败、以及拉到了 0 条内容的）—— 续拉时用它算起点 */
+  processed: number;
   /** 是否被用户暂停中断 */
   paused: boolean;
   /** 实际发出的请求总数（用于给用户看进度是否合理） */
@@ -188,5 +190,5 @@ export async function fetchManyUps(opts: BatchOptions): Promise<BatchResult> {
     }
   }
 
-  return { fetched, skipped, failed, paused, requests };
+  return { fetched, skipped, failed, processed: done, paused, requests };
 }

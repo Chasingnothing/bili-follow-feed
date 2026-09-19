@@ -1,7 +1,7 @@
 import { memo, useMemo, useState } from 'react';
 import type { TrimmedFollowedUp } from '../types';
 import type { Group } from '../lib/localGroups';
-import { UNCATEGORIZED_ID } from '../lib/upIndex';
+import { groupFollowings } from '../lib/groupMembership';
 import { upSpaceUrl } from '../lib/links';
 import { limitMatches } from '../lib/searchLimit';
 import {
@@ -78,23 +78,11 @@ function Sidebar(props: Props) {
     });
   }
 
-  // mid → 所属本地分组（空/缺失 = 未分类）
-  const byGroup = useMemo(() => {
-    const map = new Map<string, TrimmedFollowedUp[]>();
-    for (const g of groups) map.set(g.id, []);
-    if (!map.has(UNCATEGORIZED_ID)) map.set(UNCATEGORIZED_ID, []);
-
-    for (const u of followings) {
-      const gids = membership[String(u.mid)];
-      const targets = gids && gids.length > 0 ? gids : [UNCATEGORIZED_ID];
-      for (const gid of targets) {
-        // 脏引用（指向已删除的分组）按未分类处理
-        const bucket = map.has(gid) ? gid : UNCATEGORIZED_ID;
-        map.get(bucket)!.push(u);
-      }
-    }
-    return map;
-  }, [groups, followings, membership]);
+  // mid → 所属本地分组（归属规则与模式 2 共用同一套，见 groupFollowings）
+  const byGroup = useMemo(
+    () => groupFollowings(groups, membership, followings),
+    [groups, membership, followings],
+  );
 
   const q = query.trim().toLowerCase();
   const ordered = useMemo(() => [...groups].sort((a, b) => a.order - b.order), [groups]);

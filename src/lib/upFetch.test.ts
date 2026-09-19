@@ -280,7 +280,32 @@ describe('fetchManyUps —— 一个板块', () => {
       onFetched: () => {},
       sleep: noSleep,
     });
-    expect(res).toEqual({ fetched: 0, skipped: 0, failed: 0, paused: false, requests: 0 });
+    expect(res).toEqual({
+      fetched: 0,
+      skipped: 0,
+      failed: 0,
+      processed: 0,
+      paused: false,
+      requests: 0,
+    });
+  });
+
+  it('processed 把跳过、失败、拉到 0 条都算进去（续拉要用它算起点）', async () => {
+    const res = await fetchManyUps({
+      mids: [1, 2, 3],
+      want: 5,
+      isFresh: (mid) => mid === 1,
+      fetchUp: async (mid) => {
+        if (mid === 2) throw new Error('x');
+        return ok([]); // 拉到了但一条可显示的都没有
+      },
+      onFetched: () => {},
+      sleep: noSleep,
+    });
+    expect(res.processed).toBe(3);
+    expect(res.skipped).toBe(1);
+    expect(res.failed).toBe(1);
+    expect(res.fetched).toBe(0);
   });
 
   it('拉到 0 条（整页都是转发）不算失败，也不算成功', async () => {

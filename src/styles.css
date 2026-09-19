@@ -265,6 +265,30 @@ html.bff-active body {
   font-size: 12px;
   color: #9499a0;
 }
+/* ── 模式 2 的板块操作条（拉取更多 / 计数器 / 多看一条）────────────────── */
+/* 位置在**页码条上方**（用户明确要求） */
+.bff-upbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 24px 2px;
+  flex-wrap: wrap;
+}
+.bff-upbar-go {
+  padding: 4px 12px;
+  font-size: 13px;
+}
+.bff-upbar-go:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.bff-upcount {
+  font-size: 12px;
+  color: #9499a0;
+  /* 数字会变，给个不跳动的宽度感 */
+  font-variant-numeric: tabular-nums;
+}
+
 .bff-empty {
   padding: 60px;
   text-align: center;

@@ -113,12 +113,12 @@ export function pickEvictions(
   return sorted.slice(0, entries.length - max).map((e) => e.mid);
 }
 
-/** 当前缓存的 `{mid, lastUsedAt}` 列表（淘汰前算一次就够，别每个 UP 都扫一遍） */
-export function cachedUsage(): Array<{ mid: number; lastUsedAt: number }> {
-  return cachedMids().map((mid) => ({
-    mid,
-    lastUsedAt: loadUpEntry(mid)?.lastUsedAt ?? 0,
-  }));
+/** 当前缓存的 `{mid, at, lastUsedAt}` 列表（淘汰/判新前算一次就够，别每个 UP 都扫一遍） */
+export function cachedUsage(): Array<{ mid: number; at: number; lastUsedAt: number }> {
+  return cachedMids().map((mid) => {
+    const e = loadUpEntry(mid);
+    return { mid, at: e?.at ?? 0, lastUsedAt: e?.lastUsedAt ?? 0 };
+  });
 }
 
 /**
@@ -160,4 +160,24 @@ export function clearUpItems(): number {
 /** 某个 UP 上次发请求的时间；从未拉过为 0 */
 export function fetchedAt(mid: number): number {
   return loadUpEntry(mid)?.at ?? 0;
+}
+
+/**
+ * 一次性读出**所有** UP 的条目，按 mid 分组。
+ *
+ * 组装模式 2 的板块时要遍历几百个 UP —— 逐个调 `loadUpItems` 就是几百次
+ * `localStorage.getItem + JSON.parse`，每次渲染都做一遍会卡。
+ * 所以走这一条：扫描一次 `localStorage`，只解析 `bff:up:` 开头的键。
+ */
+export function loadAllItems(): Map<number, FeedItem[]> {
+  const out = new Map<number, FeedItem[]>();
+  for (const mid of cachedMids()) {
+    const e = loadUpEntry(mid);
+    if (!e) continue;
+    out.set(
+      mid,
+      e.cards.map((c) => expandItem(mid, c)),
+    );
+  }
+  return out;
 }

@@ -32,6 +32,8 @@ export interface UpPullApi {
   /** 正在批量拉取时的进度；没在拉就是 null */
   progress: { done: number; total: number } | null;
   onPullMore: () => void;
+  /** 请求在下一个 UP 边界停下（已拉到的保留） */
+  onPause: () => void;
   onMoreLayer: () => void;
 }
 
@@ -197,15 +199,22 @@ export default function GroupSection({
            */}
           {upPull && (
             <div className="bff-upbar">
+              {/*
+               * 同一个按钮：没在拉时是「拉取更多」，拉取中变成「暂停」。
+               * 关注多的人一个板块可能要拉几分钟，必须能停下来。
+               */}
               <button
                 type="button"
-                className="bff-upbar-go"
-                onClick={upPull.onPullMore}
-                disabled={upPull.progress !== null}
-                title="把这个板块里还没拉过的 UP 拉一遍"
+                className={`bff-upbar-go${upPull.progress ? ' is-busy' : ''}`}
+                onClick={upPull.progress ? upPull.onPause : upPull.onPullMore}
+                title={
+                  upPull.progress
+                    ? '在下一个 UP 之后停下（已拉到的内容会保留）'
+                    : '把这个板块里还没拉过的 UP 拉一遍'
+                }
               >
                 {upPull.progress
-                  ? `拉取中 ${upPull.progress.done}/${upPull.progress.total}…`
+                  ? `⏸ 暂停（${upPull.progress.done}/${upPull.progress.total}）`
                   : '⟳ 拉取更多'}
               </button>
 

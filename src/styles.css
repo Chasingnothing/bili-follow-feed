@@ -282,6 +282,12 @@ html.bff-active body {
   opacity: 0.45;
   cursor: default;
 }
+/* 拉取中：同一个按钮变成「暂停」，用不同颜色提示它是另一个动作 */
+.bff-upbar-go.is-busy {
+  background: #fb7299;
+  border-color: #fb7299;
+  color: #fff;
+}
 .bff-upcount {
   font-size: 12px;
   color: #9499a0;

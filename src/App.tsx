@@ -923,6 +923,9 @@ export default function App() {
                 maxLayer: MAX_LAYER,
                 progress: pulling[s.group.id] ?? null,
                 onPullMore: () => pullMore(s.group.id, s.ups.map((u) => u.mid)),
+                onPause: () => {
+                  upPauseRef.current = true;
+                },
                 onMoreLayer: () => {
                   changeLayer(s.group.id, Math.min(MAX_LAYER, s.layer + 1));
                   // 揭示时更新"使用时间"，否则正在看的板块反而会被先淘汰

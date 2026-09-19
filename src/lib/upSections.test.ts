@@ -96,15 +96,28 @@ describe('buildUpSections', () => {
     expect(s[0].items).toHaveLength(4);
   });
 
-  it('计数器：分子是有缓存的 UP 数，分母是该板块全部 UP 数', () => {
+  it('计数器：分子是有内容的 UP 数，分母是该板块全部 UP 数', () => {
     const s = buildUpSections({ ...base, layers: {}, cache: cacheFixture() });
-    // g1 有 2 个 UP，两个都有缓存
+    // g1 有 2 个 UP，两个都有内容
     expect(s[0].ups).toHaveLength(2);
     expect(s[0].cachedCount).toBe(2);
-    // g2 有 1 个 UP，没有缓存
+    expect(s[0].checkedCount).toBe(2);
+    // g2 有 1 个 UP，没查过
     expect(s[1].ups).toHaveLength(1);
     expect(s[1].cachedCount).toBe(0);
+    expect(s[1].checkedCount).toBe(0);
     expect(s[1].items).toEqual([]);
+  });
+
+  it('⚠️ 空条目算"查过了"但不算"有内容"（解释分子为什么上不去）', () => {
+    const cache = new Map<number, FeedItem[]>([
+      [10, []], // 查过了，但他全是转发
+      [20, [item('b1', 20, 250)]], // 有内容
+    ]);
+    const s = buildUpSections({ ...base, layers: {}, cache });
+    expect(s[0].ups).toHaveLength(2);
+    expect(s[0].cachedCount).toBe(1);
+    expect(s[0].checkedCount).toBe(2);
   });
 
   it('整个板块没有缓存时也产出板块（否则用户以为分组丢了）', () => {

@@ -29,8 +29,15 @@ export interface UpSectionModel {
   group: Group;
   /** 该板块的全部 UP —— 计数器的分母 */
   ups: TrimmedFollowedUp[];
-  /** 其中**已经有缓存**的 UP 数 —— 计数器的分子 */
+  /** 其中**已经有内容**的 UP 数 —— 计数器的分子 */
   cachedCount: number;
+  /**
+   * 其中**已经查过**的 UP 数（含"查过了但一条可显示内容都没有"的空条目）。
+   *
+   * `checkedCount > cachedCount` 的那部分就是"全是转发/直播推广位"的 UP ——
+   * 界面要把它说出来，否则用户会一直纳闷计数器为什么到不了满分。
+   */
+  checkedCount: number;
   /** 该板块要显示的条目（已按层裁剪、已排序） */
   items: FeedItem[];
   /** 该板块当前层数（`1..MAX_LAYER`） */
@@ -71,9 +78,13 @@ export function buildUpSections(opts: UpSectionsOptions): UpSectionModel[] {
 
       const pool: FeedItem[] = [];
       let cachedCount = 0;
+      let checkedCount = 0;
       for (const u of ups) {
         const items = cache.get(u.mid);
-        if (!items || items.length === 0) continue;
+        // `has` 与 `length` 分开判：空数组代表"查过了但没内容"，是有意义的状态
+        if (!items) continue;
+        checkedCount++;
+        if (items.length === 0) continue;
         cachedCount++;
         // 缓存里是最新在前，取前 layer 条就是"这个 UP 最新的 layer 条"
         pool.push(...items.slice(0, layer));
@@ -83,6 +94,7 @@ export function buildUpSections(opts: UpSectionsOptions): UpSectionModel[] {
         group,
         ups,
         cachedCount,
+        checkedCount,
         items: collator ? [...pool].sort(collator) : pool,
         layer,
       };

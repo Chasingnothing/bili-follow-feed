@@ -110,9 +110,11 @@ export interface BatchOptions {
 export interface BatchResult {
   /** 真的拉到内容的 UP 数 */
   fetched: number;
+  /** 拉成功了但**一条可显示内容都没有**的 UP 数（全是转发/直播推广位） */
+  empty: number;
   skipped: number;
   failed: number;
-  /** 一共处理了多少个 UP（含跳过、失败、以及拉到了 0 条内容的）—— 续拉时用它算起点 */
+  /** 一共处理了多少个 UP（含跳过、失败、空结果）—— 续拉时用它算起点 */
   processed: number;
   /** 是否被用户暂停中断 */
   paused: boolean;
@@ -143,6 +145,7 @@ export async function fetchManyUps(opts: BatchOptions): Promise<BatchResult> {
   } = opts;
 
   let fetched = 0;
+  let empty = 0;
   let skipped = 0;
   let failed = 0;
   let paused = false;
@@ -165,13 +168,25 @@ export async function fetchManyUps(opts: BatchOptions): Promise<BatchResult> {
     try {
       const res = await fetchUp(mid);
       requests += res.pages;
-      if (res.error) failed++;
-      if (res.items.length > 0) {
+
+      if (res.error) {
+        failed++;
+        // 部分成功：已拿到的要保住
+        if (res.items.length > 0) onFetched(mid, res.items);
+      } else {
+        /*
+         * ⚠️ 即使是空数组也要回调。
+         *
+         * 有些 UP 的动态流里一条可显示内容都没有（全是转发，或纯直播推广位）。
+         * 如果这时不落盘，调用方就无从知道"这个 UP 已经查过了" ——
+         * 于是每次点「拉取更多」都会**重新拉他 3 页**，永远如此。
+         * 空条目体积近乎为零，换来的是"查过了"这个事实。
+         */
         onFetched(mid, res.items);
-        fetched++;
-      } else if (!res.error) {
-        // 拉到了但一条可显示的都没有（比如整页都是转发）—— 不算失败
+        if (res.items.length > 0) fetched++;
+        else empty++;
       }
+
       if (res.paused) {
         paused = true;
         done++;
@@ -190,5 +205,5 @@ export async function fetchManyUps(opts: BatchOptions): Promise<BatchResult> {
     }
   }
 
-  return { fetched, skipped, failed, processed: done, paused, requests };
+  return { fetched, empty, skipped, failed, processed: done, paused, requests };
 }

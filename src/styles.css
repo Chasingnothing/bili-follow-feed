@@ -294,6 +294,11 @@ html.bff-active body {
   /* 数字会变，给个不跳动的宽度感 */
   font-variant-numeric: tabular-nums;
 }
+/* 「N 个无内容」—— 解释分子为什么到不了分母 */
+.bff-upempty {
+  color: #9499a0;
+  opacity: 0.85;
+}
 
 .bff-empty {
   padding: 60px;

@@ -376,6 +376,7 @@ export default function App() {
           } else {
             upResumeRef.current = null;
             const parts = [`拉取完成：成功 ${res.fetched} 个 UP`];
+            if (res.empty > 0) parts.push(`${res.empty} 个没有可显示的内容`);
             if (res.skipped > 0) parts.push(`跳过 ${res.skipped} 个（刚拉过）`);
             if (res.failed > 0) parts.push(`失败 ${res.failed} 个`);
             setUpNotice(parts.join('；'));
@@ -919,6 +920,7 @@ export default function App() {
               upPull={{
                 upTotal: s.ups.length,
                 upCached: s.cachedCount,
+                upChecked: s.checkedCount,
                 layer: s.layer,
                 maxLayer: MAX_LAYER,
                 progress: pulling[s.group.id] ?? null,

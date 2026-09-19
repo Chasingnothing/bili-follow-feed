@@ -282,6 +282,7 @@ describe('fetchManyUps —— 一个板块', () => {
     });
     expect(res).toEqual({
       fetched: 0,
+      empty: 0,
       skipped: 0,
       failed: 0,
       processed: 0,
@@ -290,7 +291,7 @@ describe('fetchManyUps —— 一个板块', () => {
     });
   });
 
-  it('processed 把跳过、失败、拉到 0 条都算进去（续拉要用它算起点）', async () => {
+  it('processed 把跳过、失败、空结果都算进去（续拉要用它算起点）', async () => {
     const res = await fetchManyUps({
       mids: [1, 2, 3],
       want: 5,
@@ -305,19 +306,66 @@ describe('fetchManyUps —— 一个板块', () => {
     expect(res.processed).toBe(3);
     expect(res.skipped).toBe(1);
     expect(res.failed).toBe(1);
+    expect(res.empty).toBe(1);
     expect(res.fetched).toBe(0);
   });
 
-  it('拉到 0 条（整页都是转发）不算失败，也不算成功', async () => {
+  it('拉到 0 条（整页都是转发）不算失败，但**必须回调**让调用方记下"查过了"', async () => {
+    const saved: Array<{ mid: number; n: number }> = [];
     const res = await fetchManyUps({
       mids: [1],
       want: 5,
       fetchUp: async () => ok([], 1),
-      onFetched: () => {},
+      onFetched: (mid, items) => saved.push({ mid, n: items.length }),
       sleep: noSleep,
     });
+
     expect(res.fetched).toBe(0);
     expect(res.failed).toBe(0);
-    expect(res.requests).toBe(1);
+    expect(res.empty).toBe(1);
+    // ⚠️ 关键：空数组也要回调。否则调用方不会落盘 → "这个 UP 查过了"这个事实丢失
+    // → 每次点「拉取更多」都会重新拉他 3 页，永远如此。
+    expect(saved).toEqual([{ mid: 1, n: 0 }]);
+  });
+
+  it('⚠️ 回归：没有内容的 UP 也要被记下来，否则会被无限重复拉取', async () => {
+    // 第一轮：这个 UP 一条可显示内容都没有
+    const stored = new Map<number, number>(); // mid → 上次拉取时间
+    const onFetched = (mid: number, items: FeedItem[]) => stored.set(mid, items.length);
+
+    await fetchManyUps({
+      mids: [7],
+      want: 5,
+      fetchUp: async () => ok([], 3),
+      onFetched,
+      sleep: noSleep,
+    });
+    expect(stored.has(7)).toBe(true);
+
+    // 第二轮：isFresh 依赖"查过了"，于是应该被跳过而不是重拉 3 页
+    const fetchUp = vi.fn(async () => ok([], 3));
+    const second = await fetchManyUps({
+      mids: [7],
+      want: 5,
+      isFresh: (mid) => stored.has(mid),
+      fetchUp,
+      onFetched,
+      sleep: noSleep,
+    });
+    expect(fetchUp).not.toHaveBeenCalled();
+    expect(second.skipped).toBe(1);
+    expect(second.requests).toBe(0);
+  });
+
+  it('报错的 UP 不记"查过了"（否则网络抖动会被当成"他没内容"）', async () => {
+    const saved: number[] = [];
+    await fetchManyUps({
+      mids: [1],
+      want: 5,
+      fetchUp: async () => ({ items: [], pages: 1, exhausted: false, paused: false, error: '网络' }),
+      onFetched: (mid) => saved.push(mid),
+      sleep: noSleep,
+    });
+    expect(saved).toEqual([]);
   });
 });

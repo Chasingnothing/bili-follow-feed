@@ -25,6 +25,8 @@ export interface UpPullApi {
   upTotal: number;
   /** 其中已有缓存的 UP 数 —— 分子 */
   upCached: number;
+  /** 其中已查过的 UP 数（含"查过但没内容"的）—— 用来解释分子为什么上不去 */
+  upChecked: number;
   /** 当前层数，1-based */
   layer: number;
   /** 层数上限 */
@@ -218,8 +220,16 @@ export default function GroupSection({
                   : '⟳ 拉取更多'}
               </button>
 
-              <span className="bff-upcount" title="分子是已经有缓存的 UP 数，分母是这个板块的 UP 总数">
+              <span className="bff-upcount" title="分子是已经有内容的 UP 数，分母是这个板块的 UP 总数">
                 已保存 {upPull.upCached} / {upPull.upTotal} 个 UP
+                {upPull.upChecked > upPull.upCached && (
+                  <span
+                    className="bff-upempty"
+                    title="这些 UP 的动态流里一条可显示的内容都没有（全是转发或直播推广位）"
+                  >
+                    （{upPull.upChecked - upPull.upCached} 个无内容）
+                  </span>
+                )}
               </span>
 
               <button

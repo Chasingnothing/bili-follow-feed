@@ -206,3 +206,28 @@ export function coversWindow(cards: VideoCard[], cutoffTs: number): boolean {
   for (const c of cards) if (c.pubdate < oldest) oldest = c.pubdate;
   return oldest < cutoffTs;
 }
+
+/** 「还没手动加载过更早的内容」—— 这个值不会压低窗口下限 */
+export const NO_MANUAL_FLOOR = Number.POSITIVE_INFINITY;
+
+/**
+ * 算出**显示下限**。
+ *
+ * 时间窗本身是"自动补齐到多深"的目标，但它**不应该挡住用户手动加载的内容**：
+ * 边界已经被窗口盖满之后，用户再点「加载更多」，拉回来的必然全是窗口之外的旧内容 ——
+ * 如果照窗口过滤，就会变成"点了没反应"（v0.8.4 的真实 bug）。
+ *
+ * 所以显示下限取两者中**更早**的一个：
+ *  - `cutoffTs`：时间窗边界
+ *  - `manualOldestTs`：手动「加载更多」拉到的最旧一条（没手动加载过时传 `NO_MANUAL_FLOOR`）
+ *
+ * `hours === 0`（仅首页）表示"不自动往下拉"，不是"只显示 0 小时"，所以不过滤。
+ */
+export function visibleCutoff(
+  hours: number,
+  manualOldestTs: number,
+  nowMs: number = Date.now(),
+): number {
+  if (hours === 0) return Number.NEGATIVE_INFINITY;
+  return Math.min(cutoffFor(hours, nowMs), manualOldestTs);
+}

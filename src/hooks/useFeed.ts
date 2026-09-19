@@ -9,6 +9,8 @@ import {
   shiftCheckpoints,
   withinWindow,
   coversWindow,
+  visibleCutoff,
+  NO_MANUAL_FLOOR,
   WINDOW_OPTIONS,
 } from '../lib/feedWindow';
 import type { PageCheckpoint } from '../lib/feedWindow';
@@ -127,6 +129,14 @@ export function useFeed(): FeedApi {
   const gen = useRef(0);
   /** 每翻完一页记一条，用于截断后仍能算出有效游标 —— 见 feedWindow.offsetForKept */
   const checkpointsRef = useRef<PageCheckpoint[]>([]);
+  /**
+   * 手动「加载更多」拉到的最旧一条的时间。
+   *
+   * 窗口边界**不该挡住用户手动要来的内容**：窗口被盖满之后再点「加载更多」，
+   * 拉回来的必然全是窗口之外的旧内容，照窗口过滤就会表现为"点了没反应"。
+   * `NO_MANUAL_FLOOR` 表示还没手动加载过。
+   */
+  const manualFloorRef = useRef<number>(NO_MANUAL_FLOOR);
 
   /**
    * 时间窗是【显示】范围；`cardsRef` 里保留的是【已拉到的】深度（通常更深）。
@@ -135,10 +145,9 @@ export function useFeed(): FeedApi {
    * 重拉已有的部分（从游标接着往下追加就行）。
    */
   const windowFilter = useCallback((all: VideoCard[]) => {
-    const h = hoursRef.current;
-    // 「仅首页」(0) 的语义是"不自动往下拉"，不是"只显示 0 小时"，所以不按时间过滤
-    if (h === 0) return all.slice();
-    return withinWindow(all, cutoffFor(h));
+    const cutoff = visibleCutoff(hoursRef.current, manualFloorRef.current);
+    // 「仅首页」(0) 时 visibleCutoff 返回 -Infinity，等价于不过滤
+    return withinWindow(all, cutoff);
   }, []);
 
   const applyCards = useCallback(
@@ -285,6 +294,8 @@ export function useFeed(): FeedApi {
       checkpointsRef.current = [];
       seenRef.current = new Set();
       cardsRef.current = [];
+      // 从头开始时手动下限也归零，否则会一直显示"上次手动加载到的更早位置"
+      manualFloorRef.current = NO_MANUAL_FLOOR;
 
       try {
         const first = await source.fetchPage(null);
@@ -435,6 +446,8 @@ export function useFeed(): FeedApi {
       hoursRef.current = h;
       setWindowHours(h);
       writeJson(HOURS_KEY, h);
+      // 重新选窗口 = 重新声明"我要看多久"，此前的"手动看更早"作废
+      manualFloorRef.current = NO_MANUAL_FLOOR;
       const myGen = ++gen.current;
       setError(null);
       void applyWindow(h, myGen);
@@ -461,7 +474,16 @@ export function useFeed(): FeedApi {
             const page = await source.fetchPage(tailOffset.current);
 
             const seen = new Set(cardsRef.current.map((c) => c.bvid));
-            applyCards([...cardsRef.current, ...page.items.filter((c) => !seen.has(c.bvid))]);
+            const added = page.items.filter((c) => !seen.has(c.bvid));
+            if (added.length > 0) {
+              // 手动加载来的内容**必须能看见** —— 放宽显示下限。
+              // 否则窗口盖满之后每次点「加载更多」拉回的都是窗口外的旧内容，全被滤掉，
+              // 表现为"点了没反应"。
+              let oldest = manualFloorRef.current;
+              for (const c of added) if (c.pubdate < oldest) oldest = c.pubdate;
+              manualFloorRef.current = oldest;
+            }
+            applyCards([...cardsRef.current, ...added]);
 
             setHasMore(page.hasMore);
             // 与 hasMoreRef 保持同步：完整加载的节流刷新会用后者覆盖 state

@@ -8,6 +8,8 @@ import {
   shiftCheckpoints,
   withinWindow,
   coversWindow,
+  visibleCutoff,
+  NO_MANUAL_FLOOR,
   type PageCheckpoint,
 } from './feedWindow';
 import type { FeedPage, VideoCard } from '../types';
@@ -553,5 +555,36 @@ describe('coversWindow', () => {
 
   it('顺序无关（取的是最小值）', () => {
     expect(coversWindow([card(100), card(900)], 500)).toBe(true);
+  });
+});
+
+describe('visibleCutoff', () => {
+  const NOW = 1_800_000_000_000; // ms
+
+  it('没手动加载过时就是时间窗边界', () => {
+    // 1 天窗 → 边界 = now/1000 - 86400
+    expect(visibleCutoff(24, NO_MANUAL_FLOOR, NOW)).toBe(Math.floor(NOW / 1000) - 86400);
+  });
+
+  it('⚠️ 回归：手动加载到更早的内容时，下限要跟着放宽（否则「加载更多」点了没反应）', () => {
+    const windowCutoff = Math.floor(NOW / 1000) - 86400;
+    const manual = windowCutoff - 100000; // 手动加载到了更早
+    expect(visibleCutoff(24, manual, NOW)).toBe(manual);
+  });
+
+  it('手动下限比窗口还新时，仍以窗口为准（不会反而显示更少）', () => {
+    const windowCutoff = Math.floor(NOW / 1000) - 86400;
+    expect(visibleCutoff(24, windowCutoff + 5000, NOW)).toBe(windowCutoff);
+  });
+
+  it('hours=0（仅首页）不过滤，返回 -Infinity', () => {
+    expect(visibleCutoff(0, NO_MANUAL_FLOOR, NOW)).toBe(Number.NEGATIVE_INFINITY);
+    expect(visibleCutoff(0, 12345, NOW)).toBe(Number.NEGATIVE_INFINITY);
+  });
+
+  it('窗口越大边界越早', () => {
+    const h6 = visibleCutoff(6, NO_MANUAL_FLOOR, NOW);
+    const h72 = visibleCutoff(72, NO_MANUAL_FLOOR, NOW);
+    expect(h72).toBeLessThan(h6);
   });
 });

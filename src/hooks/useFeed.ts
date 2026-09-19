@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FeedPage, VideoCard } from '../types';
 import { InPageDataSource } from '../data/inPage';
+import type { FeedDataSource } from '../data/source';
 import {
   cutoffFor,
   fetchNewer,
@@ -76,8 +77,31 @@ export interface FeedApi {
   refresh: () => void;
 }
 
-function sleep(ms: number): Promise<void> {
+function realSleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * `useFeed` 的可注入依赖。
+ *
+ * 存在的唯一理由是**为了能测**：这个 hook 管着请求编排、节流、定时器和缓存读写，
+ * 是本项目最容易出错的地方（v0.8.3–v0.8.9 的四个 bug 全在这里），
+ * 而它此前一条测试都没有。生产代码一个参数都不传，行为与以前完全一致。
+ *
+ * 与 `fillToCutoff` / `fetchNewer` 的做法一致 —— 那里也是"依赖全部由参数注入，
+ * 测试时传假的 fetchPage / sleep 即可"。
+ */
+export interface FeedDeps {
+  source: FeedDataSource;
+  sleep: (ms: number) => Promise<void>;
+  /** 页与页之间的等待 */
+  delayMs: number;
+  /** 画面刷新节流间隔 */
+  flushMs: number;
+  /** 增量刷新的防抖窗口：距上次写盘多久之内连增量都跳过 */
+  freshMs: number;
+  /** 当前时间（毫秒）。测试里可控，用来验证防抖与时间窗 */
+  now: () => number;
 }
 
 interface FeedCache {
@@ -111,8 +135,21 @@ function loadStoredHours(): number {
  *     从顶部往下抓，撞见已知条目就停。离开 1 小时通常只需 1 页
  *  3. **增量追不上**（离线太久）→ 退回完整加载
  */
-export function useFeed(): FeedApi {
-  const source = useMemo(() => new InPageDataSource(), []);
+export function useFeed(overrides: Partial<FeedDeps> = {}): FeedApi {
+  // 冻结在第一渲染：依赖在 hook 生命周期内不应该变（测试传一次就够了），
+  // 用 ref 而不是 useMemo 是为了避免调用方传对象字面量导致每渲染都重建
+  const depsRef = useRef<FeedDeps | null>(null);
+  if (depsRef.current === null) {
+    depsRef.current = {
+      source: overrides.source ?? new InPageDataSource(),
+      sleep: overrides.sleep ?? realSleep,
+      delayMs: overrides.delayMs ?? PAGE_DELAY_MS,
+      flushMs: overrides.flushMs ?? RENDER_FLUSH_MS,
+      freshMs: overrides.freshMs ?? FRESH_MS,
+      now: overrides.now ?? Date.now,
+    };
+  }
+  const { source, sleep, delayMs, flushMs, freshMs, now } = depsRef.current;
 
   const [cards, setCards] = useState<VideoCard[]>([]);
   const [hasMore, setHasMore] = useState(true);
@@ -166,7 +203,7 @@ export function useFeed(): FeedApi {
    * 重拉已有的部分（从游标接着往下追加就行）。
    */
   const windowFilter = useCallback((all: VideoCard[]) => {
-    const cutoff = visibleCutoff(hoursRef.current, manualFloorRef.current);
+    const cutoff = visibleCutoff(hoursRef.current, manualFloorRef.current, now());
     // 「仅首页」(0) 时 visibleCutoff 返回 -Infinity，等价于不过滤
     return withinWindow(all, cutoff);
   }, []);
@@ -193,15 +230,15 @@ export function useFeed(): FeedApi {
       clearTimeout(pendingFlush.current);
       pendingFlush.current = null;
     }
-    lastFlushAt.current = Date.now();
+    lastFlushAt.current = now();
     setCards(windowFilter(cardsRef.current));
     setFilledPages(pagesRef.current);
     setHasMore(hasMoreRef.current);
   }, [windowFilter]);
 
   const scheduleFlush = useCallback(() => {
-    const elapsed = Date.now() - lastFlushAt.current;
-    if (elapsed >= RENDER_FLUSH_MS) {
+    const elapsed = now() - lastFlushAt.current;
+    if (elapsed >= flushMs) {
       flushNow();
       return;
     }
@@ -209,7 +246,7 @@ export function useFeed(): FeedApi {
     pendingFlush.current = window.setTimeout(() => {
       pendingFlush.current = null;
       flushNow();
-    }, RENDER_FLUSH_MS - elapsed);
+    }, flushMs - elapsed);
   }, [flushNow]);
 
   // 卸载时清掉待处理的定时器，避免在已卸载的组件上 setState
@@ -229,7 +266,7 @@ export function useFeed(): FeedApi {
       ? offsetForKept(checkpointsRef.current, MAX_CACHED_CARDS)
       : tailOffset.current;
     writeJson(CACHE_KEY, {
-      at: Date.now(),
+      at: now(),
       hours,
       cards: cardsRef.current.slice(0, MAX_CACHED_CARDS),
       tailOffset: tail,
@@ -278,7 +315,7 @@ export function useFeed(): FeedApi {
         const res = await fillToCutoff({
           fetchPage: (offset) => source.fetchPage(offset),
           startOffset,
-          cutoffTs: cutoffFor(hours),
+          cutoffTs: cutoffFor(hours, now()),
           // 总页数上限是全局的：续拉时要把已经翻过的页数扣掉
           maxPages: Math.max(0, MAX_FILL_PAGES - pagesRef.current - 1),
           onPage: (p) => {
@@ -287,7 +324,7 @@ export function useFeed(): FeedApi {
             pagesRef.current += 1;
             tailOffset.current = p.nextOffset;
           },
-          delayMs: PAGE_DELAY_MS,
+          delayMs,
           sleep,
           shouldStop: () => pauseRequestedRef.current,
         });
@@ -391,7 +428,7 @@ export function useFeed(): FeedApi {
           fetchPage: (offset) => source.fetchPage(offset),
           known: new Set(cachedCards.map((c) => c.bvid)),
           maxPages: MAX_INCREMENTAL_PAGES,
-          delayMs: PAGE_DELAY_MS,
+          delayMs,
           sleep,
           shouldStop: () => pauseRequestedRef.current,
         });
@@ -444,7 +481,7 @@ export function useFeed(): FeedApi {
           setLoading(false);
 
           // ② 刚拉过就连增量都跳过，避免连续刷新打接口
-          if (Date.now() - cached.at < FRESH_MS) return;
+          if (now() - cached.at < freshMs) return;
 
           // ③ 增量刷新；追不上就退回完整加载
           const outcome = await incremental(cached.cards, myGen);
@@ -488,7 +525,7 @@ export function useFeed(): FeedApi {
       // 先按新窗口刷新显示。缩小窗口的情况到这里就结束了，一个请求都不发。
       flushNow();
 
-      if (h === 0 || coversWindow(all, cutoffFor(h))) {
+      if (h === 0 || coversWindow(all, cutoffFor(h, now()))) {
         setCovered(true);
         persistCache(h);
         return;
@@ -574,7 +611,7 @@ export function useFeed(): FeedApi {
 
             const exhausted = !page.hasMore || !page.nextOffset || page.oldestPubTs === 0;
             if (exhausted) break;
-            if (i < pages - 1) await sleep(PAGE_DELAY_MS);
+            if (i < pages - 1) await sleep(delayMs);
           }
           persistCache(hoursRef.current);
         } catch (e) {

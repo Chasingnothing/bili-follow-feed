@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import type { TrimmedFollowedUp } from '../types';
 import type { Group } from '../lib/localGroups';
 import { UNCATEGORIZED_ID } from '../lib/upIndex';
 import { upSpaceUrl } from '../lib/links';
+import { limitMatches } from '../lib/searchLimit';
 import {
   loadCollapsed,
   saveCollapsed,
@@ -39,7 +40,7 @@ function syncLabel(ts: number, fromCache: boolean): string {
   return `${fromCache ? '缓存' : '已同步'} ${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-export default function Sidebar(props: Props) {
+function Sidebar(props: Props) {
   const {
     groups,
     membership,
@@ -122,11 +123,15 @@ export default function Sidebar(props: Props) {
       <div className="bff-side-list">
         {ordered.map((g) => {
           const all = byGroup.get(g.id) ?? [];
-          const items = q ? all.filter((u) => u.uname.toLowerCase().includes(q)) : all;
-          if (q && items.length === 0) return null;
+          const matched = q ? all.filter((u) => u.uname.toLowerCase().includes(q)) : all;
+          if (q && matched.length === 0) return null;
+
+          // 只在**搜索时**限制渲染条数：不搜索时必须完整列出，用户要靠它做分类。
+          // （无条件截断过一次，结果未分类里 262 个 UP 只显示 50 个 —— 见下方的测试）
+          const { shown, hidden } = q ? limitMatches(matched) : { shown: matched, hidden: 0 };
 
           const folded = isCollapsed(g.id);
-          const allSelected = items.length > 0 && items.every((u) => selected.has(u.mid));
+          const allSelected = matched.length > 0 && matched.every((u) => selected.has(u.mid));
 
           return (
             <div className="bff-side-group" key={g.id}>
@@ -144,19 +149,19 @@ export default function Sidebar(props: Props) {
                   <input
                     type="checkbox"
                     checked={allSelected}
-                    onChange={() => onSelectMany(items.map((u) => u.mid), !allSelected)}
+                    onChange={() => onSelectMany(matched.map((u) => u.mid), !allSelected)}
                     title="全选本组"
                   />
                 )}
                 <span className="bff-side-groupname" title={g.name}>
                   {g.name}
                 </span>
-                <span className="bff-side-count">{items.length}</span>
+                <span className="bff-side-count">{matched.length}</span>
               </div>
 
               {!folded && (
                 <div className="bff-side-items">
-                  {items.map((u) => (
+                  {shown.map((u) => (
                     <div className="bff-up-row" key={u.mid}>
                       {batchActive && (
                         <input
@@ -201,7 +206,12 @@ export default function Sidebar(props: Props) {
                       </button>
                     </div>
                   ))}
-                  {items.length === 0 && <div className="bff-side-none">（空）</div>}
+                  {matched.length === 0 && <div className="bff-side-none">（空）</div>}
+                  {hidden > 0 && (
+                    <div className="bff-side-none">
+                      还有 {hidden} 个匹配未显示，继续输入以缩小范围
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -228,3 +238,16 @@ export default function Sidebar(props: Props) {
     </aside>
   );
 }
+
+/**
+ * `memo` 是**性能关键**，不是可选优化。
+ *
+ * 动态流加载时会连续 `setCards`（最多 40 页），App 因此反复重渲染；而 Sidebar
+ * 的 props **没有一个来自 `cards`**，本来完全不需要跟着重渲染。不做记忆化时，
+ * 关注 5000 人就是 5000 行 DOM 被无谓地重建 40 次 —— 实测表现是**页面卡死**。
+ *
+ * ⚠️ 让 memo 生效的前提：所有 props 必须引用稳定。尤其是 `onOpenGroupMenu`，
+ * 它曾经是 `App.tsx` 里的内联箭头函数（每次渲染都是新函数），会让 memo 完全失效。
+ * 改动此处签名或新增 props 时，请确认调用方传的是 `useCallback` 包装过的函数。
+ */
+export default memo(Sidebar);

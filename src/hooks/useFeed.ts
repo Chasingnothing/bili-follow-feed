@@ -16,6 +16,14 @@ const FRESH_MS = 60 * 1000;
 const CACHE_KEY = 'bff:feedCache';
 /** 缓存里最多留多少张卡片 */
 const MAX_CACHED_CARDS = 600;
+/**
+ * 完整加载时的**渲染节流**间隔。
+ *
+ * 完整加载会连续翻最多 40 页。原先每页都 `setCards` + `setFilledPages`，
+ * 也就是 40 次全量重渲染 —— 关注多的人会觉得页面卡死。
+ * 现在卡片先累积进 `cardsRef`（**逻辑立即生效**），画面最多每 400ms 刷新一次。
+ */
+const RENDER_FLUSH_MS = 400;
 
 export interface MoreProgress {
   done: number;
@@ -95,6 +103,45 @@ export function useFeed(): FeedApi {
     setCards(next);
   }, []);
 
+  // ── 渲染节流（只用于完整加载的后台补齐）────────────────────────────────
+  const pagesRef = useRef(0);
+  const hasMoreRef = useRef(true);
+  const pendingFlush = useRef<number | null>(null);
+  /** 0 表示"从未刷新过"，于是第一次 scheduleFlush 会立即刷新（首屏必须秒出） */
+  const lastFlushAt = useRef(0);
+
+  const flushNow = useCallback(() => {
+    if (pendingFlush.current !== null) {
+      clearTimeout(pendingFlush.current);
+      pendingFlush.current = null;
+    }
+    lastFlushAt.current = Date.now();
+    setCards([...cardsRef.current]);
+    setFilledPages(pagesRef.current);
+    setHasMore(hasMoreRef.current);
+  }, []);
+
+  const scheduleFlush = useCallback(() => {
+    const elapsed = Date.now() - lastFlushAt.current;
+    if (elapsed >= RENDER_FLUSH_MS) {
+      flushNow();
+      return;
+    }
+    if (pendingFlush.current !== null) return;
+    pendingFlush.current = window.setTimeout(() => {
+      pendingFlush.current = null;
+      flushNow();
+    }, RENDER_FLUSH_MS - elapsed);
+  }, [flushNow]);
+
+  // 卸载时清掉待处理的定时器，避免在已卸载的组件上 setState
+  useEffect(
+    () => () => {
+      if (pendingFlush.current !== null) clearTimeout(pendingFlush.current);
+    },
+    [],
+  );
+
   const persistCache = useCallback((hours: number) => {
     // 卡片被截断时尾部游标已失去对应关系，存了会让「加载更多」跳过一段
     const truncated = cardsRef.current.length > MAX_CACHED_CARDS;
@@ -114,23 +161,26 @@ export function useFeed(): FeedApi {
       setFilledPages(0);
       setMoreProgress(null);
       tailOffset.current = null;
+      pagesRef.current = 0;
 
       const collected: VideoCard[] = [];
       const seen = new Set<string>();
+      /** 只更新 refs + 触发节流刷新，**不**直接 setState —— 见 RENDER_FLUSH_MS 的说明 */
       const push = (page: FeedPage) => {
         for (const c of page.items) {
           if (seen.has(c.bvid)) continue;
           seen.add(c.bvid);
           collected.push(c);
         }
-        applyCards([...collected]);
+        cardsRef.current = collected;
+        hasMoreRef.current = page.hasMore;
+        scheduleFlush();
       };
 
       try {
         const first = await source.fetchPage(null);
         if (myGen !== gen.current) return;
         push(first);
-        setHasMore(first.hasMore);
         tailOffset.current = first.nextOffset;
         // 首屏已出，后续是后台补齐 —— 不能让 UI 一直显示"加载中"
         setLoading(false);
@@ -150,8 +200,7 @@ export function useFeed(): FeedApi {
           onPage: (p) => {
             if (myGen !== gen.current) return;
             push(p);
-            setFilledPages((n) => n + 1);
-            setHasMore(p.hasMore);
+            pagesRef.current += 1;
             tailOffset.current = p.nextOffset;
           },
           delayMs: PAGE_DELAY_MS,
@@ -165,11 +214,13 @@ export function useFeed(): FeedApi {
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
+        // 保证最后一页一定画出来（节流可能把它攒在待处理的定时器里）
+        flushNow();
         setLoading(false);
         setFilling(false);
       }
     },
-    [source, applyCards, persistCache],
+    [source, persistCache, scheduleFlush, flushNow],
   );
 
   /**
@@ -274,6 +325,8 @@ export function useFeed(): FeedApi {
             applyCards([...cardsRef.current, ...page.items.filter((c) => !seen.has(c.bvid))]);
 
             setHasMore(page.hasMore);
+            // 与 hasMoreRef 保持同步：完整加载的节流刷新会用后者覆盖 state
+            hasMoreRef.current = page.hasMore;
             tailOffset.current = page.nextOffset;
             setMoreProgress({ done: i + 1, total: pages });
 

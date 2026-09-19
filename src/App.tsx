@@ -438,6 +438,17 @@ export default function App() {
     setNotice(`已清理历史数据，释放约 ${(freed / 1024).toFixed(1)} KB`);
   }, [followings.list, refreshLocal]);
 
+  /**
+   * ⚠️ 必须用 `useCallback` 包装。
+   *
+   * `Sidebar` 是 `memo` 的（见 Sidebar.tsx 末尾的说明）。这里原先是内联箭头
+   * `onOpenGroupMenu={(el) => ...}` —— 每次渲染都产生新函数引用，会让 memo
+   * **完全失效**，于是加载动态流时侧边栏跟着重渲染几千行，表现为页面卡死。
+   */
+  const openGroupMenu = useCallback((el: HTMLElement) => {
+    setMenuAnchor(el.getBoundingClientRect());
+  }, []);
+
   // ── 派生值 ────────────────────────────────────────────────────────────
 
   const diverged = useMemo(
@@ -484,7 +495,7 @@ export default function App() {
         onPick={pickFor}
         onRefresh={followings.refresh}
         onMergeImport={mergeNow}
-        onOpenGroupMenu={(el) => setMenuAnchor(el.getBoundingClientRect())}
+        onOpenGroupMenu={openGroupMenu}
       />
 
       <main className={`bff-main${batchActive ? ' is-batch' : ''}`}>

@@ -1,5 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fillToCutoff, cutoffFor, WINDOW_OPTIONS, fetchNewer } from './feedWindow';
+import {
+  fillToCutoff,
+  cutoffFor,
+  WINDOW_OPTIONS,
+  fetchNewer,
+  offsetForKept,
+  shiftCheckpoints,
+  withinWindow,
+  coversWindow,
+  type PageCheckpoint,
+} from './feedWindow';
 import type { FeedPage, VideoCard } from '../types';
 
 function page(over: Partial<FeedPage>): FeedPage {
@@ -404,5 +414,144 @@ describe('fetchNewer', () => {
     });
     expect(fetchPage).not.toHaveBeenCalled();
     expect(res.caughtUp).toBe(false);
+  });
+});
+
+describe('offsetForKept', () => {
+  const cps: PageCheckpoint[] = [
+    { count: 12, offset: 'o12' },
+    { count: 24, offset: 'o24' },
+    { count: 30, offset: 'o30' },
+    { count: 42, offset: 'o42' },
+  ];
+
+  it('取"覆盖不超过 keep"的最后一个检查点', () => {
+    expect(offsetForKept(cps, 600)).toBe('o42');
+    expect(offsetForKept(cps, 42)).toBe('o42');
+    expect(offsetForKept(cps, 41)).toBe('o30');
+    expect(offsetForKept(cps, 30)).toBe('o30');
+    expect(offsetForKept(cps, 29)).toBe('o24');
+  });
+
+  it('keep 比第一页还小时返回 null', () => {
+    expect(offsetForKept(cps, 11)).toBeNull();
+    expect(offsetForKept(cps, 0)).toBeNull();
+  });
+
+  it('没有检查点时返回 null（老版本缓存没有这个字段）', () => {
+    expect(offsetForKept([], 600)).toBeNull();
+  });
+
+  it('同一页有多条时取 count 最大的那个（乱序输入也稳）', () => {
+    const messy: PageCheckpoint[] = [
+      { count: 20, offset: 'b' },
+      { count: 10, offset: 'a' },
+      { count: 15, offset: 'c' },
+    ];
+    expect(offsetForKept(messy, 17)).toBe('c');
+  });
+
+  it('count 为 0 的检查点（整页没有视频）也算有效', () => {
+    expect(offsetForKept([{ count: 0, offset: 'zero' }], 600)).toBe('zero');
+  });
+});
+
+describe('shiftCheckpoints', () => {
+  const cps: PageCheckpoint[] = [
+    { count: 12, offset: 'a' },
+    { count: 24, offset: 'b' },
+  ];
+
+  it('整体平移计数', () => {
+    expect(shiftCheckpoints(cps, 5)).toEqual([
+      { count: 17, offset: 'a' },
+      { count: 29, offset: 'b' },
+    ]);
+  });
+
+  it('平移 0 时原样返回同一个引用', () => {
+    expect(shiftCheckpoints(cps, 0)).toBe(cps);
+  });
+
+  it('不修改入参', () => {
+    shiftCheckpoints(cps, 5);
+    expect(cps[0].count).toBe(12);
+  });
+
+  it('平移后 offsetForKept 会选到正确的那个（这就是它存在的理由）', () => {
+    // 头部插入 5 张后只保留 24 张：正确的恢复点是"原 count=19 处"，
+    // 也就是原 count=12 那条平移后的 17。若不平移，会选中 24 → 越过截断点 → 漏内容。
+    const shifted = shiftCheckpoints(cps, 5);
+    expect(offsetForKept(cps, 24)).toBe('b'); // 未平移：错，指向 24（已越界）
+    expect(offsetForKept(shifted, 24)).toBe('a'); // 平移后：正确
+  });
+});
+
+describe('withinWindow', () => {
+  const card = (bvid: string, pubdate: number): VideoCard =>
+    ({
+      bvid,
+      title: '',
+      cover: '',
+      durationText: '',
+      play: 0,
+      danmaku: 0,
+      pubdate,
+      upMid: 0,
+      upName: '',
+      upFace: '',
+      url: '',
+    }) satisfies VideoCard;
+
+  const cards = [card('a', 1000), card('b', 500), card('c', 100)];
+
+  it('只保留 pubdate >= cutoff 的卡片', () => {
+    expect(withinWindow(cards, 500).map((c) => c.bvid)).toEqual(['a', 'b']);
+    expect(withinWindow(cards, 1001)).toEqual([]);
+  });
+
+  it('边界值算在内（>= 而不是 >）', () => {
+    // cutoff 是"窗口的起点"，比它新的才留下；正好等于边界的那条要保留
+    expect(withinWindow(cards, 100).map((c) => c.bvid)).toEqual(['a', 'b', 'c']);
+    expect(withinWindow(cards, 101).map((c) => c.bvid)).toEqual(['a', 'b']);
+  });
+
+  it('总是返回新数组（否则 setState 会因为引用相同而跳过渲染）', () => {
+    const out = withinWindow(cards, 0);
+    expect(out).not.toBe(cards);
+    expect(out).toHaveLength(3);
+  });
+});
+
+describe('coversWindow', () => {
+  const card = (pubdate: number): VideoCard =>
+    ({
+      bvid: String(pubdate),
+      title: '',
+      cover: '',
+      durationText: '',
+      play: 0,
+      danmaku: 0,
+      pubdate,
+      upMid: 0,
+      upName: '',
+      upFace: '',
+      url: '',
+    }) satisfies VideoCard;
+
+  it('最旧的一条越过边界 → 已覆盖', () => {
+    expect(coversWindow([card(900), card(400), card(100)], 500)).toBe(true);
+  });
+
+  it('最旧的还没到边界 → 未覆盖', () => {
+    expect(coversWindow([card(900), card(600)], 500)).toBe(false);
+  });
+
+  it('空列表不算覆盖', () => {
+    expect(coversWindow([], 500)).toBe(false);
+  });
+
+  it('顺序无关（取的是最小值）', () => {
+    expect(coversWindow([card(100), card(900)], 500)).toBe(true);
   });
 });

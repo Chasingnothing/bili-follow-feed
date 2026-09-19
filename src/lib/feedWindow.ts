@@ -131,3 +131,78 @@ export async function fetchNewer(opts: IncrementalOptions): Promise<IncrementalR
 
   return { fresh, caughtUp, pages };
 }
+
+/**
+ * 翻页检查点：每翻完一页记一条。
+ *
+ * `count` 是"这一页处理完后，累计有多少张**视频卡片**"（不是原始条目数）；
+ * `offset` 是这一页返回的 `nextOffset`，即"从这一页之后再往下"的游标。
+ */
+export interface PageCheckpoint {
+  count: number;
+  offset: string;
+}
+
+/**
+ * 找出"覆盖不超过 `keep` 张卡片"的最后一个检查点的游标。
+ *
+ * 用途：缓存被截断（只保留最新 N 张）时，**原来的 tailOffset 已经失效** ——
+ * 它指向的位置不在缓存里了，直接保留会在恢复后漏掉一段，置 `null` 又会让
+ * 「加载更多」每次刷新都从第 1 页重走（实测要空点约 50 页）。
+ *
+ * 取一个**不超过截断点**的检查点，就能既不漏、也不空转：
+ * 恢复时那一页最多被重复拉一次，重复项会被 bvid 去重挡掉。
+ *
+ * 返回 `null` 表示没有检查点落在 `keep` 之内（`keep` 比第一页的卡片数还小）。
+ */
+export function offsetForKept(checkpoints: PageCheckpoint[], keep: number): string | null {
+  let bestCount = -1;
+  let best: string | null = null;
+  for (const cp of checkpoints) {
+    if (cp.count <= keep && cp.count > bestCount) {
+      bestCount = cp.count;
+      best = cp.offset;
+    }
+  }
+  return best;
+}
+
+/**
+ * 在列表**头部**插入 `by` 张卡片后，整体平移检查点的计数。
+ *
+ * `count` 是从列表开头数起的，所以头部插入必须同步平移。**漏了会导致漏内容**：
+ * 截断时会选中一个越过截断点的检查点，恢复后中间那几条永远不会被拉回来。
+ *
+ * 目前只有增量刷新会在头部插入（`[...fresh, ...cards]`）—— 新增此类操作时务必调用本函数。
+ */
+export function shiftCheckpoints(checkpoints: PageCheckpoint[], by: number): PageCheckpoint[] {
+  if (by === 0) return checkpoints;
+  return checkpoints.map((cp) => ({ count: cp.count + by, offset: cp.offset }));
+}
+
+/**
+ * 按时间窗裁出**要显示**的卡片。
+ *
+ * 时间窗是【显示】范围；而缓存里保留的是【已拉到的】深度（通常更深）。
+ * 两者分开的好处：缩小窗口不需要重新拉取，扩大窗口也不需要重拉已有的部分。
+ *
+ * 注意 `pubdate` 是**秒级**，与 `cutoffFor` 一致；`VideoCard.pubdate` 不是毫秒。
+ */
+export function withinWindow(cards: VideoCard[], cutoffTs: number): VideoCard[] {
+  return cards.filter((c) => c.pubdate >= cutoffTs);
+}
+
+/**
+ * 判断"已拉到的卡片"是否**已经覆盖**了目标窗口。
+ *
+ * 覆盖的判据是"最旧的一条比窗口边界还旧" —— 因为卡片是从顶部连续往下拉的，
+ * 一旦最旧的已经越过边界，中间的必然都在。
+ *
+ * `cards` 为空时返回 false（什么都没拉，当然不算覆盖）。
+ */
+export function coversWindow(cards: VideoCard[], cutoffTs: number): boolean {
+  if (cards.length === 0) return false;
+  let oldest = Number.POSITIVE_INFINITY;
+  for (const c of cards) if (c.pubdate < oldest) oldest = c.pubdate;
+  return oldest < cutoffTs;
+}

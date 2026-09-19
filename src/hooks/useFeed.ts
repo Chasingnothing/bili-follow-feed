@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FeedPage, VideoCard } from '../types';
 import { InPageDataSource } from '../data/inPage';
-import { cutoffFor, fetchNewer, fillToCutoff } from '../lib/feedWindow';
+import {
+  cutoffFor,
+  fetchNewer,
+  fillToCutoff,
+  offsetForKept,
+  shiftCheckpoints,
+  withinWindow,
+  coversWindow,
+  WINDOW_OPTIONS,
+} from '../lib/feedWindow';
+import type { PageCheckpoint } from '../lib/feedWindow';
 import { readJson, writeJson } from '../lib/storage';
 
 /** 页与页之间的等待：探针实测 30 页 / 400ms 可稳定跑完 */
@@ -14,6 +24,13 @@ const MAX_INCREMENTAL_PAGES = 15;
 const FRESH_MS = 60 * 1000;
 
 const CACHE_KEY = 'bff:feedCache';
+/**
+ * 用户选的时间窗也要落盘。
+ *
+ * 否则重新打开页面时窗口会回到默认的 1 天，而缓存里存的是 `hours: 72` ——
+ * `cached.hours === hours` 不成立，于是**白白重拉一遍**。
+ */
+const HOURS_KEY = 'bff:feedHours';
 /** 缓存里最多留多少张卡片 */
 const MAX_CACHED_CARDS = 600;
 /**
@@ -61,10 +78,21 @@ interface FeedCache {
   cards: VideoCard[];
   /** 已加载到的尾部游标。**必须一起存** —— 否则缓存命中后「加载更多」会从第 1 页重来 */
   tailOffset: string | null;
+  /**
+   * 每页一个检查点，用于卡片被截断时**仍然能算出一个有效游标**。
+   * 老版本缓存没有这个字段 → 按空数组处理。
+   */
+  checkpoints?: PageCheckpoint[];
 }
 
 /** 手动「加载更多」的页数选项 */
 export const LOAD_MORE_OPTIONS = [1, 3, 5, 10];
+
+/** 读回用户上次选的时间窗；存的值不合法（老版本 / 手改）时回落默认的 1 天 */
+function loadStoredHours(): number {
+  const h = readJson<number>(HOURS_KEY, 24);
+  return WINDOW_OPTIONS.some((o) => o.hours === h) ? h : 24;
+}
 
 /**
  * 动态流加载。
@@ -87,7 +115,7 @@ export function useFeed(): FeedApi {
   const [covered, setCovered] = useState(false);
   const [capReached, setCapReached] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [windowHours, setWindowHours] = useState(24);
+  const [windowHours, setWindowHours] = useState(loadStoredHours);
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreProgress, setMoreProgress] = useState<MoreProgress | null>(null);
 
@@ -97,18 +125,38 @@ export function useFeed(): FeedApi {
   const hoursRef = useRef(windowHours);
   /** 加载代次：切换时间窗会启动新加载，旧的那次应丢弃自己的结果 */
   const gen = useRef(0);
+  /** 每翻完一页记一条，用于截断后仍能算出有效游标 —— 见 feedWindow.offsetForKept */
+  const checkpointsRef = useRef<PageCheckpoint[]>([]);
 
-  const applyCards = useCallback((next: VideoCard[]) => {
-    cardsRef.current = next;
-    setCards(next);
+  /**
+   * 时间窗是【显示】范围；`cardsRef` 里保留的是【已拉到的】深度（通常更深）。
+   *
+   * 两者分开之后：缩小窗口不需要重新拉取（只是显示变少），扩大窗口也不需要
+   * 重拉已有的部分（从游标接着往下追加就行）。
+   */
+  const windowFilter = useCallback((all: VideoCard[]) => {
+    const h = hoursRef.current;
+    // 「仅首页」(0) 的语义是"不自动往下拉"，不是"只显示 0 小时"，所以不按时间过滤
+    if (h === 0) return all.slice();
+    return withinWindow(all, cutoffFor(h));
   }, []);
 
-  // ── 渲染节流（只用于完整加载的后台补齐）────────────────────────────────
+  const applyCards = useCallback(
+    (next: VideoCard[]) => {
+      cardsRef.current = next;
+      setCards(windowFilter(next));
+    },
+    [windowFilter],
+  );
+
+  // ── 渲染节流（只用于后台翻页）──────────────────────────────────────────
   const pagesRef = useRef(0);
   const hasMoreRef = useRef(true);
   const pendingFlush = useRef<number | null>(null);
   /** 0 表示"从未刷新过"，于是第一次 scheduleFlush 会立即刷新（首屏必须秒出） */
   const lastFlushAt = useRef(0);
+  /** 已收进 `cardsRef` 的 bvid，用于跨页去重；每次从零加载时重建 */
+  const seenRef = useRef<Set<string>>(new Set());
 
   const flushNow = useCallback(() => {
     if (pendingFlush.current !== null) {
@@ -116,10 +164,10 @@ export function useFeed(): FeedApi {
       pendingFlush.current = null;
     }
     lastFlushAt.current = Date.now();
-    setCards([...cardsRef.current]);
+    setCards(windowFilter(cardsRef.current));
     setFilledPages(pagesRef.current);
     setHasMore(hasMoreRef.current);
-  }, []);
+  }, [windowFilter]);
 
   const scheduleFlush = useCallback(() => {
     const elapsed = Date.now() - lastFlushAt.current;
@@ -143,63 +191,66 @@ export function useFeed(): FeedApi {
   );
 
   const persistCache = useCallback((hours: number) => {
-    // 卡片被截断时尾部游标已失去对应关系，存了会让「加载更多」跳过一段
     const truncated = cardsRef.current.length > MAX_CACHED_CARDS;
+    // 截断后原来的游标指向的位置已经不在缓存里了：
+    // 直接保留会漏一段，置 null 会让每次刷新都从第 1 页空转。
+    // 改用一个"不超过截断点"的检查点游标，既不漏也不空转（见 offsetForKept）。
+    const tail = truncated
+      ? offsetForKept(checkpointsRef.current, MAX_CACHED_CARDS)
+      : tailOffset.current;
     writeJson(CACHE_KEY, {
       at: Date.now(),
       hours,
       cards: cardsRef.current.slice(0, MAX_CACHED_CARDS),
-      tailOffset: truncated ? null : tailOffset.current,
+      tailOffset: tail,
+      checkpoints: checkpointsRef.current,
     } satisfies FeedCache);
   }, []);
 
-  /** 完整加载：第一页 → 后台补齐到窗口边界 */
-  const fullLoad = useCallback(
-    async (hours: number, myGen: number) => {
-      setLoading(true);
-      setCapReached(false);
-      setFilledPages(0);
-      setMoreProgress(null);
-      tailOffset.current = null;
-      pagesRef.current = 0;
+  /**
+   * 把一页的结果并进 `cardsRef`，并记一个检查点。
+   *
+   * `fullLoad`（从零）与「扩大窗口时的续拉」共用这一段 —— 两者的区别只在于
+   * 调用前 `cardsRef` / `checkpointsRef` 是不是空的。
+   */
+  const applyPage = useCallback(
+    (page: FeedPage) => {
+      const added: VideoCard[] = [];
+      for (const c of page.items) {
+        if (seenRef.current.has(c.bvid)) continue;
+        seenRef.current.add(c.bvid);
+        added.push(c);
+      }
+      if (added.length > 0) cardsRef.current = [...cardsRef.current, ...added];
+      hasMoreRef.current = page.hasMore;
+      // 检查点每一页都要记：「这页处理完后累计多少张卡」+「从这页之后再往下的游标」
+      if (page.nextOffset) {
+        checkpointsRef.current.push({ count: cardsRef.current.length, offset: page.nextOffset });
+      }
+      scheduleFlush();
+    },
+    [scheduleFlush],
+  );
 
-      const collected: VideoCard[] = [];
-      const seen = new Set<string>();
-      /** 只更新 refs + 触发节流刷新，**不**直接 setState —— 见 RENDER_FLUSH_MS 的说明 */
-      const push = (page: FeedPage) => {
-        for (const c of page.items) {
-          if (seen.has(c.bvid)) continue;
-          seen.add(c.bvid);
-          collected.push(c);
-        }
-        cardsRef.current = collected;
-        hasMoreRef.current = page.hasMore;
-        scheduleFlush();
-      };
-
+  /**
+   * 从 `startOffset` 往下翻，直到覆盖 `hours` 窗口 / 流到底 / 翻满上限。
+   *
+   * **不重置任何状态** —— 所以"在已有卡片上接着往下拉"和"从零开始拉"是同一条
+   * 代码路径。这就是"扩大窗口 = 纯追加"的实现方式。
+   */
+  const runFill = useCallback(
+    async (hours: number, myGen: number, startOffset: string | null) => {
+      setFilling(true);
       try {
-        const first = await source.fetchPage(null);
-        if (myGen !== gen.current) return;
-        push(first);
-        tailOffset.current = first.nextOffset;
-        // 首屏已出，后续是后台补齐 —— 不能让 UI 一直显示"加载中"
-        setLoading(false);
-
-        if (hours === 0) {
-          setCovered(true);
-          persistCache(hours);
-          return;
-        }
-
-        setFilling(true);
         const res = await fillToCutoff({
           fetchPage: (offset) => source.fetchPage(offset),
-          startOffset: first.nextOffset,
+          startOffset,
           cutoffTs: cutoffFor(hours),
-          maxPages: MAX_FILL_PAGES - 1,
+          // 总页数上限是全局的：续拉时要把已经翻过的页数扣掉
+          maxPages: Math.max(0, MAX_FILL_PAGES - pagesRef.current - 1),
           onPage: (p) => {
             if (myGen !== gen.current) return;
-            push(p);
+            applyPage(p);
             pagesRef.current += 1;
             tailOffset.current = p.nextOffset;
           },
@@ -216,11 +267,49 @@ export function useFeed(): FeedApi {
       } finally {
         // 保证最后一页一定画出来（节流可能把它攒在待处理的定时器里）
         flushNow();
-        setLoading(false);
         setFilling(false);
       }
     },
-    [source, persistCache, scheduleFlush, flushNow],
+    [source, applyPage, persistCache, flushNow],
+  );
+
+  /** 完整加载：清空 → 第一页秒出 → 后台补齐到窗口边界 */
+  const fullLoad = useCallback(
+    async (hours: number, myGen: number) => {
+      setLoading(true);
+      setCapReached(false);
+      setFilledPages(0);
+      setMoreProgress(null);
+      tailOffset.current = null;
+      pagesRef.current = 0;
+      checkpointsRef.current = [];
+      seenRef.current = new Set();
+      cardsRef.current = [];
+
+      try {
+        const first = await source.fetchPage(null);
+        if (myGen !== gen.current) return;
+        applyPage(first);
+        tailOffset.current = first.nextOffset;
+        // 首屏已出，后续是后台补齐 —— 不能让 UI 一直显示"加载中"
+        flushNow();
+        setLoading(false);
+
+        if (hours === 0) {
+          setCovered(true);
+          persistCache(hours);
+          return;
+        }
+
+        await runFill(hours, myGen, first.nextOffset);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        flushNow();
+        setLoading(false);
+      }
+    },
+    [source, applyPage, persistCache, flushNow, runFill],
   );
 
   /**
@@ -247,7 +336,12 @@ export function useFeed(): FeedApi {
       // 没追上 = 缓存与新增之间有断层，必须整体重来，不能把两段接上
       if (!res.caughtUp) return 'fallback';
 
-      if (res.fresh.length > 0) applyCards([...res.fresh, ...cardsRef.current]);
+      if (res.fresh.length > 0) {
+        applyCards([...res.fresh, ...cardsRef.current]);
+        // ⚠️ 头部插入会改变所有卡片的下标，检查点的 count 必须同步平移。
+        // 漏了这一步会在截断时选中一个越过截断点的检查点 → 恢复后**漏掉中间几条**。
+        checkpointsRef.current = shiftCheckpoints(checkpointsRef.current, res.fresh.length);
+      }
       persistCache(hoursRef.current);
       return 'merged';
     },
@@ -265,6 +359,11 @@ export function useFeed(): FeedApi {
           // ① 先把缓存铺上：刷新页面不白屏，也不重跑 10 页
           applyCards(cached.cards);
           tailOffset.current = cached.tailOffset ?? null;
+          // 检查点必须一起恢复，否则本轮一旦发生截断，游标又会被置 null
+          checkpointsRef.current = cached.checkpoints ?? [];
+          // 深度信息也要恢复，否则「扩大窗口」会以为自己只有第一页
+          pagesRef.current = cached.checkpoints?.length ?? 0;
+          seenRef.current = new Set(cached.cards.map((c) => c.bvid));
           setCovered(true);
           setHasMore(true);
           setLoading(false);
@@ -294,13 +393,53 @@ export function useFeed(): FeedApi {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load]);
 
+  /**
+   * 切换时间窗 —— **不再清空重拉**。
+   *
+   * 时间窗只是【显示】范围，`cardsRef` 里保留的是【已拉到的】深度，于是：
+   *  - 新窗口比已有深度**浅** → 0 个请求，只是显示变少
+   *  - 新窗口比已有深度**深** → 从现有游标**接着往下拉**（纯追加）
+   *  - 没有数据 / 游标不可用 → 才退回完整加载
+   */
+  const applyWindow = useCallback(
+    async (h: number, myGen: number) => {
+      const all = cardsRef.current;
+
+      if (all.length === 0) {
+        await fullLoad(h, myGen);
+        return;
+      }
+
+      // 先按新窗口刷新显示。缩小窗口的情况到这里就结束了，一个请求都不发。
+      flushNow();
+
+      if (h === 0 || coversWindow(all, cutoffFor(h))) {
+        setCovered(true);
+        persistCache(h);
+        return;
+      }
+
+      // 深度不够，需要接着往下拉。游标不可用（例如老缓存）就只能重来。
+      if (tailOffset.current === null) {
+        await fullLoad(h, myGen);
+        return;
+      }
+
+      await runFill(h, myGen, tailOffset.current);
+    },
+    [fullLoad, runFill, persistCache, flushNow],
+  );
+
   const changeWindow = useCallback(
     (h: number) => {
       hoursRef.current = h;
       setWindowHours(h);
-      void load(h, true); // 换窗口是明确操作，绕过缓存
+      writeJson(HOURS_KEY, h);
+      const myGen = ++gen.current;
+      setError(null);
+      void applyWindow(h, myGen);
     },
-    [load],
+    [applyWindow],
   );
 
   const refresh = useCallback(() => {
@@ -327,6 +466,13 @@ export function useFeed(): FeedApi {
             setHasMore(page.hasMore);
             // 与 hasMoreRef 保持同步：完整加载的节流刷新会用后者覆盖 state
             hasMoreRef.current = page.hasMore;
+            // 手动翻页也要记检查点，否则「加载更多」拉深之后截断仍然会丢游标
+            if (page.nextOffset) {
+              checkpointsRef.current.push({
+                count: cardsRef.current.length,
+                offset: page.nextOffset,
+              });
+            }
             tailOffset.current = page.nextOffset;
             setMoreProgress({ done: i + 1, total: pages });
 

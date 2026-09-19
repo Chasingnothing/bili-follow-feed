@@ -133,6 +133,92 @@ describe('fillToCutoff', () => {
     expect(seen).toEqual([1, 2]);
   });
 
+  it('shouldStop 一开始就为真 → 一个请求都不发，标记 paused', async () => {
+    const fetchPage = vi.fn();
+
+    const res = await fillToCutoff({
+      fetchPage,
+      startOffset: null,
+      cutoffTs: 600,
+      maxPages: 40,
+      onPage: () => {},
+      delayMs: 0,
+      sleep: noSleep,
+      shouldStop: () => true,
+    });
+
+    expect(fetchPage).not.toHaveBeenCalled();
+    expect(res.pages).toBe(0);
+    expect(res.stoppedBy).toBe('paused');
+    expect(res.covered).toBe(false);
+  });
+
+  it('中途暂停：停在页边界，已交付的页一页都不丢', async () => {
+    const delivered: number[] = [];
+    let n = 0;
+    // 每页都远离边界，所以只可能因为暂停而停
+    const fetchPage = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(page({ oldestPubTs: 9999, nextOffset: `o${++n}` })));
+
+    const res = await fillToCutoff({
+      fetchPage,
+      startOffset: null,
+      cutoffTs: 0,
+      maxPages: 40,
+      onPage: (_p, i) => delivered.push(i),
+      delayMs: 0,
+      sleep: noSleep,
+      // 第 2 页交付之后才要求暂停
+      shouldStop: () => delivered.length >= 2,
+    });
+
+    expect(delivered).toEqual([1, 2]);
+    expect(res.pages).toBe(2);
+    expect(res.stoppedBy).toBe('paused');
+    // 没覆盖到边界，调用方不能当成"拉完了"
+    expect(res.covered).toBe(false);
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+  });
+
+  it('已经拉够时以「已覆盖」收尾，不会误报成暂停', async () => {
+    let fetched = 0;
+    const fetchPage = vi.fn().mockImplementation(() => {
+      fetched++;
+      return Promise.resolve(page({ oldestPubTs: 500 })); // 第 1 页就越过边界
+    });
+
+    const res = await fillToCutoff({
+      fetchPage,
+      startOffset: null,
+      cutoffTs: 600,
+      maxPages: 40,
+      onPage: () => {},
+      delayMs: 0,
+      sleep: noSleep,
+      shouldStop: () => fetched >= 1,
+    });
+
+    expect(res.stoppedBy).toBe('covered');
+    expect(res.covered).toBe(true);
+  });
+
+  it('不传 shouldStop 时永远不会 paused（老调用方行为不变）', async () => {
+    const fetchPage = vi.fn().mockResolvedValue(page({ oldestPubTs: 500 }));
+
+    const res = await fillToCutoff({
+      fetchPage,
+      startOffset: null,
+      cutoffTs: 600,
+      maxPages: 40,
+      onPage: () => {},
+      delayMs: 0,
+      sleep: noSleep,
+    });
+
+    expect(res.stoppedBy).toBe('covered');
+  });
+
   it('把游标透传给 fetchPage', async () => {
     const fetchPage = vi
       .fn()

@@ -658,9 +658,14 @@ export default function App() {
         hasMore={feed.hasMore}
         busy={feed.loading || feed.filling || feed.loadingMore}
         progress={feed.moreProgress}
+        filling={feed.filling}
+        paused={feed.paused}
+        filledPages={feed.filledPages}
         refreshing={feed.refreshing}
         raised={batchActive}
         onLoad={feed.loadMore}
+        onPause={feed.pause}
+        onResume={feed.resume}
       />
 
       {batchActive && (

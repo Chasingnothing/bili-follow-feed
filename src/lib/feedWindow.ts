@@ -3,7 +3,7 @@ import type { FeedPage, VideoCard } from '../types';
 export interface FillResult {
   pages: number;
   covered: boolean;
-  stoppedBy: 'covered' | 'end' | 'cap';
+  stoppedBy: 'covered' | 'end' | 'cap' | 'paused';
 }
 
 export interface FillOptions {
@@ -16,27 +16,41 @@ export interface FillOptions {
   onPage: (page: FeedPage, index: number) => void;
   delayMs: number;
   sleep: (ms: number) => Promise<void>;
+  /**
+   * 每页开始前询问是否应中断（用户点了暂停）。
+   *
+   * 判据在**页边界**上检查：当前这一页会跑完，最多多等一次限速（约 400ms）+ 一次往返。
+   * 这样暂停不会把结果丢弃 —— 已经拉到的页都已经通过 `onPage` 交给调用方了。
+   */
+  shouldStop?: () => boolean;
 }
 
 /**
- * 继续翻页，直到覆盖到时间窗边界或触达上限。
+ * 继续翻页，直到覆盖到时间窗边界、触达上限、或用户点了暂停。
  *
  * 抽成独立函数是为了**可测**：编排逻辑（何时停、翻了几页、何时限速）不该埋在
  * React hook 里。依赖全部由参数注入，测试时传假的 fetchPage / sleep 即可。
  *
- * 停止条件三条，谁先满足算谁：
+ * 停止条件四条，谁先满足算谁：
+ *  0. `shouldStop()` 为真         → `paused`（用户主动中断）
  *  1. 某页最早一条 < cutoffTs  → `covered`
  *  2. 流到底（has_more=false / 无游标 / 空页）→ `end`
  *  3. 翻满 maxPages            → `cap`（调用方应据此提示"未完全覆盖"）
  */
 export async function fillToCutoff(opts: FillOptions): Promise<FillResult> {
-  const { fetchPage, startOffset, cutoffTs, maxPages, onPage, delayMs, sleep } = opts;
+  const { fetchPage, startOffset, cutoffTs, maxPages, onPage, delayMs, sleep, shouldStop } = opts;
 
   let offset = startOffset;
   let pages = 0;
   let stoppedBy: FillResult['stoppedBy'] = 'cap';
 
   while (pages < maxPages) {
+    // 在**取下一页之前**检查：当前这一页已经交付，不浪费也不丢结果
+    if (shouldStop?.()) {
+      stoppedBy = 'paused';
+      break;
+    }
+
     const page = await fetchPage(offset);
     pages++;
     onPage(page, pages);

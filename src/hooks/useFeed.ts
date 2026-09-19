@@ -56,6 +56,8 @@ export interface FeedApi {
   loading: boolean;
   /** 后台补齐时间窗中 */
   filling: boolean;
+  /** 后台补齐被用户暂停了（可以「继续」接着拉） */
+  paused: boolean;
   /** 后台增量刷新中（已经在显示缓存内容） */
   refreshing: boolean;
   filledPages: number;
@@ -67,6 +69,10 @@ export interface FeedApi {
   loadMore: (pages: number) => void;
   loadingMore: boolean;
   moreProgress: MoreProgress | null;
+  /** 请求在下一个页边界停下（已拉到的内容保留） */
+  pause: () => void;
+  /** 从暂停处接着补齐 */
+  resume: () => void;
   refresh: () => void;
 }
 
@@ -112,6 +118,7 @@ export function useFeed(): FeedApi {
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [filling, setFilling] = useState(false);
+  const [paused, setPaused] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [filledPages, setFilledPages] = useState(0);
   const [covered, setCovered] = useState(false);
@@ -137,6 +144,13 @@ export function useFeed(): FeedApi {
    * `NO_MANUAL_FLOOR` 表示还没手动加载过。
    */
   const manualFloorRef = useRef<number>(NO_MANUAL_FLOOR);
+  /**
+   * 用户点了暂停。
+   *
+   * 用 ref 而不是 state 的原因：`fillToCutoff` 是在 await 之间轮询这个标记的，
+   * 用 state 会读到闭包里的旧值（而且要等一次重渲染才生效）。
+   */
+  const pauseRequestedRef = useRef(false);
 
   /**
    * 时间窗是【显示】范围；`cardsRef` 里保留的是【已拉到的】深度（通常更深）。
@@ -249,6 +263,9 @@ export function useFeed(): FeedApi {
    */
   const runFill = useCallback(
     async (hours: number, myGen: number, startOffset: string | null) => {
+      // 开始一次补齐 → 先清掉上一轮的暂停标记（「继续」也是走这条路径）
+      pauseRequestedRef.current = false;
+      setPaused(false);
       setFilling(true);
       try {
         const res = await fillToCutoff({
@@ -265,9 +282,18 @@ export function useFeed(): FeedApi {
           },
           delayMs: PAGE_DELAY_MS,
           sleep,
+          shouldStop: () => pauseRequestedRef.current,
         });
 
         if (myGen !== gen.current) return;
+
+        if (res.stoppedBy === 'paused') {
+          // 用户主动中断：已拉到的照样落盘，游标停在这一页，之后能接着拉
+          setPaused(true);
+          persistCache(hours);
+          return;
+        }
+
         setCovered(res.covered);
         setCapReached(res.stoppedBy === 'cap');
         persistCache(hours);
@@ -296,6 +322,8 @@ export function useFeed(): FeedApi {
       cardsRef.current = [];
       // 从头开始时手动下限也归零，否则会一直显示"上次手动加载到的更早位置"
       manualFloorRef.current = NO_MANUAL_FLOOR;
+      pauseRequestedRef.current = false;
+      setPaused(false);
 
       try {
         const first = await source.fetchPage(null);
@@ -516,11 +544,28 @@ export function useFeed(): FeedApi {
     [source, applyCards, persistCache],
   );
 
+  /**
+   * 暂停后台补齐。
+   *
+   * 只是**置一个标记** —— 真正的停止发生在下一页开始之前，所以当前这一页会跑完。
+   * 这样做的好处是结果一页都不丢（已交付的页都已经进了 `cardsRef` 并落了盘），
+   * 代价是最多多等一次限速（约 400ms）+ 一次请求往返。
+   */
+  const pause = useCallback(() => {
+    pauseRequestedRef.current = true;
+  }, []);
+
+  /** 从暂停处接着补齐：游标停在上一页末尾，所以不会重复拉 */
+  const resume = useCallback(() => {
+    void runFill(hoursRef.current, gen.current, tailOffset.current);
+  }, [runFill]);
+
   return {
     cards,
     hasMore,
     loading,
     filling,
+    paused,
     refreshing,
     filledPages,
     covered,
@@ -531,6 +576,8 @@ export function useFeed(): FeedApi {
     loadMore,
     loadingMore,
     moreProgress,
+    pause,
+    resume,
     refresh,
   };
 }

@@ -17,11 +17,19 @@ interface Props {
   hasMore: boolean;
   busy: boolean;
   progress: MoreProgress | null;
+  /** 后台补齐时间窗中（关注多的人首次进入可能拉很久，需要能停） */
+  filling: boolean;
+  /** 后台补齐已被暂停 */
+  paused: boolean;
+  /** 后台补齐已完成几页 */
+  filledPages: number;
   /** 后台增量刷新中（内容已在显示，只是在检查有没有新的） */
   refreshing: boolean;
   /** 批量操作条出现时，默认位置上移让位 */
   raised: boolean;
   onLoad: (pages: number) => void;
+  onPause: () => void;
+  onResume: () => void;
 }
 
 function clampPos(p: Pos, w: number, h: number): Pos {
@@ -49,9 +57,14 @@ export default function LoadMoreBar({
   hasMore,
   busy,
   progress,
+  filling,
+  paused,
+  filledPages,
   refreshing,
   raised,
   onLoad,
+  onPause,
+  onResume,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<Pos | null>(() => readJson<Pos | null>(POS_KEY, null));
@@ -147,7 +160,8 @@ export default function LoadMoreBar({
     writeJson(POS_KEY, null);
   }, []);
 
-  if (!hasMore && !progress) return null;
+  // 补齐中/已暂停时也要显示 —— 否则用户没有地方点「暂停」
+  if (!hasMore && !progress && !filling && !paused) return null;
 
   const style = pos
     ? { left: pos.left, top: pos.top, right: 'auto', bottom: 'auto' }
@@ -165,7 +179,31 @@ export default function LoadMoreBar({
         {refreshing && <span className="bff-loadmore-checking">· 检查更新中…</span>}
       </span>
 
-      {progress ? (
+      {paused ? (
+        <>
+          <span className="bff-loadmore-progress">已暂停 · 已补 {filledPages} 页</span>
+          <button
+            type="button"
+            className="bff-loadmore-go"
+            onClick={onResume}
+            title="从暂停处接着补齐"
+          >
+            继续
+          </button>
+        </>
+      ) : filling ? (
+        <>
+          <span className="bff-loadmore-progress">补齐中 {filledPages} 页…</span>
+          <button
+            type="button"
+            className="bff-loadmore-go"
+            onClick={onPause}
+            title="暂停补齐（已拉到的内容会保留，可以之后再继续）"
+          >
+            暂停
+          </button>
+        </>
+      ) : progress ? (
         <span className="bff-loadmore-progress">
           加载中 {progress.done}/{progress.total} 页…
         </span>

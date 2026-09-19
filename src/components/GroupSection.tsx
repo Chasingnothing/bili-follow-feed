@@ -33,9 +33,18 @@ export interface UpPullApi {
   maxLayer: number;
   /** 正在批量拉取时的进度；没在拉就是 null */
   progress: { done: number; total: number } | null;
+  /**
+   * 上一次拉取的结果，显示在本板块**最底部**。
+   *
+   * 以前是一个固定在页面顶部的提示条 —— 但用户是盯着页面下方的板块看，
+   * 根本看不到，所以改成挂在对应板块自己身上。
+   */
+  status: { text: string; resumable: boolean } | null;
   onPullMore: () => void;
   /** 请求在下一个 UP 边界停下（已拉到的保留） */
   onPause: () => void;
+  onResume: () => void;
+  onDismissStatus: () => void;
   onMoreLayer: () => void;
 }
 
@@ -261,6 +270,29 @@ export default function GroupSection({
             />
           )}
         </>
+      )}
+
+      {/*
+       * 拉取结果挂在板块**最底部** —— 固定在页面顶部的提示，正在看下方板块的人根本看不到。
+       * 放在折叠判断**之外**：板块收起时也该能看到上次拉取的结果。
+       */}
+      {upPull?.status && (
+        <div className={`bff-upstatus${upPull.status.resumable ? ' is-paused' : ''}`}>
+          <span className="bff-upstatus-text">{upPull.status.text}</span>
+          {upPull.status.resumable && (
+            <button type="button" className="bff-upbar-go" onClick={upPull.onResume}>
+              继续
+            </button>
+          )}
+          <button
+            type="button"
+            className="bff-upstatus-close"
+            onClick={upPull.onDismissStatus}
+            title="关闭"
+          >
+            ×
+          </button>
+        </div>
       )}
     </section>
   );

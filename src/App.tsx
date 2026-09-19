@@ -176,13 +176,25 @@ export default function App() {
    * 所以用它当依赖：只有真的拉过/揭示过才重新读。
    */
   const [upCacheVersion, setUpCacheVersion] = useState(0);
-  /** 正在批量拉取的板块 id → 进度 */
-  const [pulling, setPulling] = useState<Record<string, { done: number; total: number }>>({});
-  /** 暂停后记下"怎么继续"，`resumePull` 直接调用 */
-  const upResumeRef = useRef<(() => void) | null>(null);
+  /**
+   * 正在批量拉取的板块与进度。**全局只有一个** ——
+   * 允许两个板块同时拉会让请求量翻倍，正好抵消掉限速的意义。
+   */
+  const [pulling, setPulling] = useState<{ groupId: string; done: number; total: number } | null>(
+    null,
+  );
+  /** 暂停后记下"是哪个板块、怎么继续" */
+  const upResumeRef = useRef<{ groupId: string; fn: () => void } | null>(null);
   const upPauseRef = useRef(false);
-  /** 一次「拉取更多」的汇总结果，结束后弹提示 */
-  const [upNotice, setUpNotice] = useState<string | null>(null);
+  /**
+   * 每个板块自己的拉取结果。
+   *
+   * 以前是一个全局提示条，固定在页面顶部 —— 但用户是盯着页面**下方**的板块看，
+   * 根本看不到。改成挂在对应板块的最底部。
+   */
+  const [pullStatus, setPullStatus] = useState<
+    Record<string, { text: string; resumable: boolean } | undefined>
+  >({});
 
   const lastVisit = useRef(loadLastVisit()).current;
   const collapseSeeded = useRef(false);
@@ -339,14 +351,17 @@ export default function App() {
    */
   const pullMore = useCallback(
     (groupId: string, mids: number[]) => {
-      if (pulling[groupId]) return;
+      // 全局一次只跑一个板块：两个同时拉会让请求量翻倍，抵消掉限速的意义
+      if (pulling) return;
       const source = new InPageDataSource();
       upPauseRef.current = false;
       // 一次性取出"上次拉取时间"，避免在循环里为每个 UP 读一次 localStorage
       const fetchedAtMap = new Map(cachedUsage().map((e) => [e.mid, e.at]));
+      // 新一轮开始 → 清掉上一轮的结果条
+      setPullStatus((s) => ({ ...s, [groupId]: undefined }));
 
       const run = (targets: number[]) => {
-        setPulling((p) => ({ ...p, [groupId]: { done: 0, total: targets.length } }));
+        setPulling({ groupId, done: 0, total: targets.length });
         void fetchManyUps({
           mids: targets,
           want: MAX_PER_UP,
@@ -368,45 +383,51 @@ export default function App() {
             saveUpItems(mid, items, Date.now());
             setUpCacheVersion((v) => v + 1);
           },
-          onProgress: (done, total) =>
-            setPulling((p) => ({ ...p, [groupId]: { done, total } })),
+          onProgress: (done, total) => setPulling({ groupId, done, total }),
           pauseEvery: PULL_BATCH,
           pauseMs: PULL_BATCH_PAUSE_MS,
           sleep,
           shouldStop: () => upPauseRef.current,
         }).then((res: BatchResult) => {
-          setPulling((p) => {
-            const next = { ...p };
-            delete next[groupId];
-            return next;
-          });
+          setPulling(null);
           setUpCacheVersion((v) => v + 1);
+
           if (res.paused) {
             // 续拉从"已处理"处接着走 —— 跳过/失败/空结果的 UP 也算处理过了
-            upResumeRef.current = () => run(targets.slice(res.processed));
-            setUpNotice('已暂停拉取；点「继续」接着拉');
-          } else {
-            upResumeRef.current = null;
-            const parts = [`拉取完成：成功 ${res.fetched} 个 UP`];
-            if (res.empty > 0) parts.push(`${res.empty} 个没有可显示的内容`);
-            if (res.skipped > 0) parts.push(`跳过 ${res.skipped} 个（刚拉过）`);
-            if (res.failed > 0) parts.push(`失败 ${res.failed} 个`);
-            setUpNotice(parts.join('；'));
+            upResumeRef.current = { groupId, fn: () => run(targets.slice(res.processed)) };
+            setPullStatus((s) => ({
+              ...s,
+              [groupId]: { text: `已暂停 · 还剩 ${targets.length - res.processed} 个`, resumable: true },
+            }));
+            return;
           }
+
+          upResumeRef.current = null;
+          const parts = [`成功 ${res.fetched} 个 UP`];
+          if (res.empty > 0) parts.push(`${res.empty} 个没有可显示的内容`);
+          if (res.skipped > 0) parts.push(`跳过 ${res.skipped} 个（刚拉过）`);
+          if (res.failed > 0) parts.push(`失败 ${res.failed} 个`);
+          setPullStatus((s) => ({ ...s, [groupId]: { text: parts.join('；'), resumable: false } }));
         });
       };
 
       run(mids);
     },
-    [pulling, upCache],
+    [pulling],
   );
 
-  const resumePull = useCallback(() => {
-    upPauseRef.current = false;
-    const fn = upResumeRef.current;
+  /** 继续某个板块被暂停的拉取。按钮在板块底部，所以由它把 groupId 传进来。 */
+  const resumePull = useCallback((groupId: string) => {
+    const r = upResumeRef.current;
+    if (!r || r.groupId !== groupId) return;
     upResumeRef.current = null;
-    setUpNotice(null);
-    fn?.();
+    upPauseRef.current = false;
+    setPullStatus((s) => ({ ...s, [groupId]: { text: '正在继续…', resumable: false } }));
+    r.fn();
+  }, []);
+
+  const dismissPullStatus = useCallback((groupId: string) => {
+    setPullStatus((s) => ({ ...s, [groupId]: undefined }));
   }, []);
 
   // ── 空板块默认折叠（只在首次拿到分区时做一次）─────────────────────────
@@ -891,20 +912,6 @@ export default function App() {
           </div>
         )}
 
-        {upNotice && (
-          <div className="bff-notice">
-            {upNotice}
-            {upResumeRef.current && (
-              <button type="button" onClick={resumePull}>
-                继续
-              </button>
-            )}
-            <button type="button" onClick={() => setUpNotice(null)}>
-              ×
-            </button>
-          </div>
-        )}
-
         {feed.error && <div className="bff-empty">接口出错：{feed.error}</div>}
 
         {mode === 'upPull' && upSections.length === 0 && (
@@ -942,11 +949,14 @@ export default function App() {
                 upChecked: s.checkedCount,
                 layer: s.layer,
                 maxLayer: MAX_LAYER,
-                progress: pulling[s.group.id] ?? null,
+                progress: pulling?.groupId === s.group.id ? pulling : null,
+                status: pullStatus[s.group.id] ?? null,
                 onPullMore: () => pullMore(s.group.id, s.ups.map((u) => u.mid)),
                 onPause: () => {
                   upPauseRef.current = true;
                 },
+                onResume: () => resumePull(s.group.id),
+                onDismissStatus: () => dismissPullStatus(s.group.id),
                 onMoreLayer: () => {
                   changeLayer(s.group.id, Math.min(MAX_LAYER, s.layer + 1));
                   // 揭示时更新"使用时间"，否则正在看的板块反而会被先淘汰

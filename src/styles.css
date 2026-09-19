@@ -299,6 +299,35 @@ html.bff-active body {
   color: #9499a0;
   opacity: 0.85;
 }
+/* 上一次拉取的结果，挂在板块最底部 */
+.bff-upstatus {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 24px 18px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: #232427;
+  border-left: 3px solid #4a4b4f;
+  font-size: 13px;
+  color: #c9cdd3;
+}
+/* 被暂停时更显眼一点，因为那里有个「继续」要用户点 */
+.bff-upstatus.is-paused {
+  border-left-color: #fb7299;
+}
+.bff-upstatus-text {
+  flex: 1;
+}
+.bff-upstatus-close {
+  border: 0;
+  background: transparent;
+  color: #9499a0;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 4px;
+}
 
 .bff-empty {
   padding: 60px;

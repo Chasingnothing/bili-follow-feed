@@ -57,6 +57,19 @@ import './styles.css';
 type SortKey = 'latest' | 'play';
 type FilterKey = 'all' | 'unread';
 type ViewMode = 'grouped' | 'flat';
+/** 内容类型筛选：视频 / 图文 / 全部 */
+type TypeKey = 'all' | 'video' | 'image';
+
+/**
+ * 排序用的"热度"。
+ *
+ * 图文**没有播放量**，所以「播放量最高」这个排序对它们全算 0 —— 混排时会把所有
+ * 图文挤到底部，看起来像坏了。这里按类型取各自有意义的指标：
+ * 视频用播放量，图文用点赞数。
+ */
+function hotness(item: FeedItem): number {
+  return item.kind === 'image' ? item.like : item.play;
+}
 
 /** localStorage 的常见配额（Chrome 约 5 MB），仅用于「存储占用」展示 */
 const QUOTA_BYTES = 5 * 1024 * 1024;
@@ -74,6 +87,7 @@ export default function App() {
 
   const [sort, setSort] = useState<SortKey>('latest');
   const [filter, setFilter] = useState<FilterKey>('all');
+  const [typeFilter, setTypeFilter] = useState<TypeKey>('all');
   const [view, setView] = useState<ViewMode>('grouped');
   const [readSet, setReadSet] = useState<Set<string>>(() => loadRead());
   const [storageWarning, setStorageWarning] = useState(false);
@@ -142,7 +156,7 @@ export default function App() {
   // ── 排序与筛选 ────────────────────────────────────────────────────────
 
   const collator = useCallback(
-    (a: FeedItem, b: FeedItem) => (sort === 'play' ? b.play - a.play : b.pubdate - a.pubdate),
+    (a: FeedItem, b: FeedItem) => (sort === 'play' ? hotness(b) - hotness(a) : b.pubdate - a.pubdate),
     [sort],
   );
 
@@ -162,8 +176,11 @@ export default function App() {
     [feed.cards, hiddenMids],
   );
   const visibleFlat = useMemo(
-    () => (filter === 'unread' ? sortedAll.filter((c) => !readSet.has(c.id)) : sortedAll),
-    [sortedAll, filter, readSet],
+    () =>
+      sortedAll
+        .filter((c) => typeFilter === 'all' || c.kind === typeFilter)
+        .filter((c) => filter !== 'unread' || !readSet.has(c.id)),
+    [sortedAll, filter, readSet, typeFilter],
   );
 
   /** 主区不渲染「隐藏」板块 —— 它只是管理入口，其内容已被过滤掉 */
@@ -508,8 +525,31 @@ export default function App() {
 
           <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
             <option value="latest">最新发布</option>
-            <option value="play">播放量最高</option>
+            {/* 图文没有播放量，按类型换个说法，否则标签是骗人的 */}
+            <option value="play" title="视频按播放量，图文按点赞数">
+              {typeFilter === 'image' ? '点赞最多' : '播放量最高'}
+            </option>
           </select>
+
+          <span className="bff-typeseg" role="group" aria-label="按内容类型筛选">
+            {(
+              [
+                ['all', '全部'],
+                ['video', '视频'],
+                ['image', '图文'],
+              ] as Array<[TypeKey, string]>
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={typeFilter === key ? 'is-on' : ''}
+                aria-pressed={typeFilter === key}
+                onClick={() => setTypeFilter(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </span>
 
           <select value={filter} onChange={(e) => setFilter(e.target.value as FilterKey)}>
             <option value="all">全部</option>

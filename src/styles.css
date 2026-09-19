@@ -142,12 +142,42 @@ html.bff-active body {
   object-fit: cover;
   display: block;
 }
-/* 纯文字动态没有封面，NEW 标记改放在标题行内 */
-.bff-new--inline {
-  position: static;
-  display: inline-block;
-  margin-right: 6px;
-  vertical-align: middle;
+/*
+ * 纯文字动态的封面占位：尺寸与真实封面一致，只是内容是一片安静的底色 + 「图文」。
+ * 不留这块的话卡片高度会参差不齐（试过，很难看）。
+ */
+.bff-cover--blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #232427;
+  color: #61666d;
+  font-size: 12px;
+  letter-spacing: 2px;
+  user-select: none;
+}
+/* 类型筛选的三连按钮 */
+.bff-typeseg {
+  display: inline-flex;
+  border: 1px solid #3a3b3f;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.bff-typeseg button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 4px 10px;
+  color: #a2a7ae;
+  cursor: pointer;
+  font-size: 13px;
+}
+.bff-typeseg button + button {
+  border-left: 1px solid #3a3b3f;
+}
+.bff-typeseg button.is-on {
+  background: #00aeec;
+  color: #fff;
 }
 .bff-duration {
   position: absolute;

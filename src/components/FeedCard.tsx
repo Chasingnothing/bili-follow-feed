@@ -43,9 +43,9 @@ export default function FeedCard({ item, read, isNew, onOpen, onPick }: Props) {
         onClick={() => onOpen(item)}
         title={item.title}
       >
-        {hasCover && (
-          <div className="bff-cover-wrap" style={coverStyle}>
-            {/* referrerPolicy 绕开 i0/i1.hdslb.com 的防盗链；图片地址已在映射层提升为 https */}
+        <div className="bff-cover-wrap" style={coverStyle}>
+          {hasCover ? (
+            /* referrerPolicy 绕开 i0/i1.hdslb.com 的防盗链；图片地址已在映射层提升为 https */
             <img
               className="bff-cover"
               src={item.cover}
@@ -53,20 +53,24 @@ export default function FeedCard({ item, read, isNew, onOpen, onPick }: Props) {
               loading="lazy"
               referrerPolicy="no-referrer"
             />
+          ) : (
+            /*
+             * 纯文字动态没有配图，但**必须留一块同尺寸的占位** ——
+             * 否则卡片高度不齐，标题会跑到图片该在的位置，UP 那一栏也跟着上移。
+             */
+            <div className="bff-cover bff-cover--blank" aria-hidden="true">
+              <span>图文</span>
+            </div>
+          )}
 
-            {isImage
-              ? item.imageCount > 1 && <span className="bff-duration">{item.imageCount} 图</span>
-              : item.durationText && <span className="bff-duration">{item.durationText}</span>}
+          {isImage
+            ? item.imageCount > 1 && <span className="bff-duration">{item.imageCount} 图</span>
+            : item.durationText && <span className="bff-duration">{item.durationText}</span>}
 
-            {isNew && <span className="bff-new">NEW</span>}
-          </div>
-        )}
-
-        <div className="bff-title">
-          {/* 纯文字动态没有封面，NEW 标记就放到标题前面 */}
-          {!hasCover && isNew && <span className="bff-new bff-new--inline">NEW</span>}
-          {item.title}
+          {isNew && <span className="bff-new">NEW</span>}
         </div>
+
+        <div className="bff-title">{item.title}</div>
       </a>
 
       <div className="bff-meta">

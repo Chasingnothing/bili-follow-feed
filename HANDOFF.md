@@ -364,6 +364,47 @@ tailOffset: cp?.offset ?? null;   // ← 恒有效，不再置 null
 **纯数值比较** `item.id <= maxKnownId`：只需在缓存里存**一个** `maxKnownId` 字符串，
 既省体积，又消掉"`known` 集合与屏幕上显示的内容不一致"这一整类隐患。
 
+### ⑭ 动态内容类型实测 —— 探针日期 2026-09-13
+
+**顶层 `type` 与 `major.type` 的组合**（feed/all 与 feed/space 一致）：
+
+| 顶层 `type` | `major.type` | 内容在哪 | 现状 |
+|---|---|---|---|
+| `DYNAMIC_TYPE_AV` | `MAJOR_TYPE_ARCHIVE` | `major.archive` | ✅ 已支持 |
+| `DYNAMIC_TYPE_DRAW` | **`MAJOR_TYPE_OPUS`** | `major.opus` | 待加 |
+| `DYNAMIC_TYPE_FORWARD` | `null` | **`orig`**（被转发的原帖） | 过滤 |
+| `DYNAMIC_TYPE_LIVE_RCMD` | `MAJOR_TYPE_LIVE_RCMD` | — | 过滤（**B站 插的推广位**） |
+
+> **图文走 opus，不是 `draw`** —— 因为请求里带了 `features: itemOpusStyle`。
+> `major.draw` 是旧格式，**我们拿不到**；照它写就是白写。
+
+**图文的字段路径**（`modules.module_dynamic.major.opus`）：
+
+| 要的 | 取哪 | 坑 |
+|---|---|---|
+| id | `id_str` | 与 offset 同一 id 空间，**19 位字符串** |
+| 链接 | `opus.jump_url` | ⚠️ **协议相对**（`//www.bilibili.com/opus/<id>`），要补 `https:` |
+| 正文 | `opus.summary.text` | 用它就够 —— emoji 已是 `[名字]` 纯文本，**不必啃 `rich_text_nodes`** |
+| 标题 | `opus.title` | ⚠️ **常为空串**，不能当正文 |
+| 封面 | `opus.pics[0].url` | ⚠️ **是 `http://`**，与 `archive.cover` 同一个混合内容坑；`pics` 可能为**空**（纯文字） |
+| 尺寸 | `pics[0].width/height` | 可用于算纵横比，**避免图片加载时卡片跳动** |
+| 统计 | `module_stat.like/comment/forward.count` | 图文**没有播放量** |
+
+`pics[]` 单项形状：`{ url, width, height, size, live_url, aigc, warning }`（`aigc` 标记 AI 生成图）。
+
+**⚠️ `stat` 是带单位的展示字符串**：实测 `"play": "3.4万"`、`"danmaku": "112"`。
+`Number("3.4万")` → `NaN` → 兜底成 0 → **所有播放量上万的视频显示 0 播放**，
+「播放量最高」排序也失效。已由 `lib/parseStat.ts` 的 `parseStatCount` 修掉（v0.8.6）。
+**fixture 里恰好是 `"99"`（不带单位），所以测试一直没碰到这个分支。**
+
+**数据占比**（feed/all 单页 23 条）：AV 12 / DRAW 5 / FORWARD 3 / LIVE_RCMD 3。
+即图文约占 **22%** —— 加上它，卡片数约 +42%。
+
+**转发的两个事实**：① 转发自己的 `major` 是 `null`，内容全在 `orig`；
+② `orig.modules.module_author.following` 实测为 **`false`** ——
+**转发确实会把你没关注的人带进来**，这正是保持过滤的理由。
+（样本：某 UP 的一页 12 条里 **11 条是转发**，过滤后只剩 1 条。）
+
 ---
 
 ## 6. 数据与存储

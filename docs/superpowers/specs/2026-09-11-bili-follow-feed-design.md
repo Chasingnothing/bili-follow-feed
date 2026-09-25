@@ -1,8 +1,8 @@
 # B站「只看关注」视频墙 — 设计文档
 
 - **日期**：2026-09-11
-- **状态**：已通过设计评审，待用户审阅本文档
-- **项目目录**：`E:\ds\bili-follow-feed\`
+- **状态**：已通过设计评审（历史文档，内容已按后续实测修正）
+- **项目目录**：仓库根目录
 - **阶段**：路线 2（热身版）
 
 ---
@@ -203,25 +203,26 @@ console.table(r.data?.items?.map(i => ({ type: i.type, author: i.modules?.module
 - `code === 0` 且有 `items` → 数据层设计成立，继续搭脚手架
 - `code !== 0` → 按 `message` 判断缺什么（签名 / ticket / 登录态），据实调整
 
-## 10. 环境事实（实现时的约束）
+## 10. 环境事实（历史记录）
+
+> ⚠️ **这一节是开发机特有信息，与使用者无关，已做脱敏。**
+> 保留它只是为了说明当时的实现约束（例如为什么某些命令写法古怪）。
+> 当年的具体路径、代理地址、沙箱策略都已移除。
 
 | 项 | 值 |
 |---|---|
 | 平台 | Windows |
 | Shell | Windows PowerShell 5.1（**`curl` 是 `Invoke-WebRequest` 别名，需写 `curl.exe`**） |
-| Node | v22.22.0 |
-| npm | 10.9.4 |
-| Python | 3.14.3 |
-| 工作区 | `E:\ds`（唯一可写目录；沙箱策略 `workspace-write`） |
-| 系统代理 | `127.0.0.1:7897`（npm 装包需代理；已持久化 `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` 用户环境变量） |
-| `PYTHONUTF8` | 已设为 `1`（避免 GBK 控制台 UnicodeEncodeError） |
-| git | **未安装** |
+| Node | v22.x |
+| 系统代理 | 开发机本地代理（具体地址已移除） |
+| `PYTHONUTF8` | 设为 `1`（避免 GBK 控制台 `UnicodeEncodeError`） |
 
-> **注意**：本会话的 shell 使用会话启动时的环境快照，新写入的用户环境变量在当前会话内不可见，每条命令需显式注入。
+> 已知的 Windows 坑：`Get-Content` 按系统 ANSI 解码 UTF-8，会**静默少数行**并吞掉换行。
+> 数行数要用 `[System.IO.File]::ReadAllLines($绝对路径)`。
 
 ## 11. 交付物
 
-- 项目目录 `E:\ds\bili-follow-feed\`
+- 仓库根目录的源码
 - 构建产物 `dist/bili-follow-feed.user.js`，拖入 Tampermonkey 安装
 - 本文档
 

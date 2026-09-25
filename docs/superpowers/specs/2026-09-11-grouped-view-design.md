@@ -357,7 +357,7 @@ const SCHEMA_VERSION = 1;
 
 ## 13. 已排除项
 
-- **取消关注**：用户明确决定不做。因此本设计**不需要 `csrf`（`bili_jct`）**，也就**不需要那个 cookie 可读性探针**。整个第二期只用到 `GET x/relation/tags` 和 `GET x/relation/followings` 两个只读接口。
+- **取消关注**：本项目明确不做。因此本设计**不需要 `csrf`（`bili_jct`）**，也就**不需要那个 cookie 可读性探针**。整个第二期只用到 `GET x/relation/tags` 和 `GET x/relation/followings` 两个只读接口。
 
 ## 14. 实测结论（原「待实测的小点」，已全部验证）
 

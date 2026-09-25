@@ -14,22 +14,20 @@
 
 ---
 
-## 环境约束（每个 shell 都要带）
+## 环境约束（历史记录）
 
-```powershell
-$env:PATH = "$([Environment]::GetEnvironmentVariable('Path','Machine'));$([Environment]::GetEnvironmentVariable('Path','User'));$env:PATH"
-$env:HTTP_PROXY = $env:HTTPS_PROXY = 'http://127.0.0.1:7897'
-$env:NO_PROXY = 'localhost,127.0.0.1,::1'
-```
+> ⚠️ **这一节记的是当时那台开发机的约束，与使用者无关，已脱敏**
+>（代理地址、沙箱策略、会话快照等已移除）。
 
-工作目录：`E:\ds\bili-follow-feed`
+工作目录：**仓库根目录**
 
 **已知约束（第一期实测得出）：**
 
-- **`npx vitest` / `npm run build` 必须全权限**：workspace-write 下 Vite 会在配置加载阶段就崩（`windowsSafeRealPathSync`）。**建议把多个任务的测试合并成一次运行**，减少审批次数。
-- 本会话 shell 使用启动时的环境快照，新写入的用户环境变量**在会话内不可见**，必须显式注入。
 - `tsc` 的 `noUnusedLocals` 开着：测试文件里的未使用 import 会导致构建失败。
-- 编辑文件前若报"文件自读取后已被修改"，重新 `read` 一次再编辑（`git add` 的行尾转换已被 `.gitattributes` 止住，但提交仍会更新 mtime）。
+- 编辑文件前若报"文件自读取后已被修改"，重新 `read` 一次再编辑
+  （`git add` 的行尾转换已被 `.gitattributes` 止住，但提交仍会更新 mtime）。
+- Windows 下数行数别用 `Get-Content`（会按 ANSI 解码 UTF-8 并静默吞掉换行），
+  用 `[System.IO.File]::ReadAllLines($绝对路径)`。
 
 ---
 

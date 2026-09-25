@@ -12,42 +12,34 @@
 
 > **Task 1 已执行完毕**：探针返回 `code = 0`，接口可用、无需签名、翻页正常。同时实测发现设计文档三处字段错误（`stat.play` 是**字符串**、`cover` 是 **`http://`**、`archive.pubdate` **不存在**），已回写设计文档 §6。**Task 3 的 fixture 必须按修正后的字段表编写。**
 
-**设计依据:** `E:\ds\bili-follow-feed\docs\superpowers\specs\2026-09-11-bili-follow-feed-design.md`
+**设计依据:** [`docs/superpowers/specs/2026-09-11-bili-follow-feed-design.md`](../superpowers/specs/2026-09-11-bili-follow-feed-design.md)
 
 ---
 
-## 环境约束（每个 shell 都要带）
+## 环境约束（历史记录）
 
-本会话的 PowerShell 使用启动时的环境快照，新写入的用户环境变量**在当前会话内不可见**。每条命令建议显式注入：
+> ⚠️ **这一节记的是当时那台开发机的约束，与使用者无关，已脱敏。**
+> 当年的代理地址、沙箱策略、会话快照等都已移除，只留对理解本仓库仍然有用的部分。
 
-```powershell
-$env:PATH = "$([Environment]::GetEnvironmentVariable('Path','User'));$([Environment]::GetEnvironmentVariable('Path','Machine'))"
-$env:HTTP_PROXY = $env:HTTPS_PROXY = 'http://127.0.0.1:7897'
-$env:NO_PROXY = 'localhost,127.0.0.1,::1'
-$env:PYTHONUTF8 = '1'
-```
-
-所有命令的工作目录：`E:\ds\bili-follow-feed`
-
-> **偏差说明**：本计划未使用 git worktree —— 项目目录全新且为空，不存在并行冲突。
-
-### 实测补充的环境约束（2026-09-11 执行时发现）
-
-- **git 已安装**（2.55.0，winget），仓库已初始化，**Task 0 完成**。
-- **`npx vitest` / `npm run build` 必须全权限**：在 workspace-write 下会在**配置加载阶段**就崩（Vite 需打包配置文件并把缓存写到工作区外，报 `windowsSafeRealPathSync` 路径错误），并非测试本身失败。**建议把多个任务的测试合并成一次运行**，减少审批次数。
-- **`git add` 的行尾转换会改写工作区文件**，触发编辑工具的"文件自读取后已被修改"误报。已加 `.gitattributes`（`* -text`）止住。
-- **npm 走代理**：通过项目内 `.npmrc`（`npm config set ... --location=project`）配置，不污染用户全局配置。
+- **`git add` 的行尾转换会改写工作区文件**，触发编辑工具的"文件自读取后已被修改"误报。
+  已加 `.gitattributes`（`* -text`）止住。
 - **`tsc` 的 `noUnusedLocals` 开着**：测试文件里的未使用 import 会导致构建失败。
+- **Windows 下 `Get-Content` 会静默少数行**（按系统 ANSI 解码 UTF-8 时会吞掉换行）。
+  数行数请用 `[System.IO.File]::ReadAllLines($绝对路径)`。
+- **`.NET` 静态调用解析相对路径是相对进程 CWD，不是 PowerShell 的 location** ——
+  一律传绝对路径，否则会出现"检查通过"其实文件根本没被读到的假通过。
+
+所有命令在**仓库根目录**执行。
 
 ---
 
-## Task 0: 安装 git 并初始化仓库（需用户批准）
+## Task 0: 安装 git 并初始化仓库
 
-**为什么需要**：本计划含高频提交，用于形成可回滚的安全点。git 未安装则无法执行。**此任务涉及系统级安装，必须先获得用户明确批准。**
+**为什么需要**：本计划含高频提交，用于形成可回滚的安全点。git 未安装则无法执行。**涉及系统级安装，执行前应先取得确认。**
 
-**Step 1: 确认用户批准安装 git**
+**Step 1: 确认可以安装 git**
 
-若用户拒绝，跳过本任务，并在后续所有 "Commit" 步骤改为人工确认检查点。
+若被拒绝，跳过本任务，并在后续所有 "Commit" 步骤改为人工确认检查点。
 
 **Step 2: 安装 git**
 
@@ -70,11 +62,11 @@ Expected: `git version 2.x.x`
 **Step 4: 初始化仓库**
 
 ```powershell
-cd E:\ds\bili-follow-feed
+cd <项目根目录>
 git init
 ```
 
-Expected: `Initialized empty Git repository in E:/ds/bili-follow-feed/.git/`
+Expected: `Initialized empty Git repository in <项目目录>/.git/`
 
 **Step 5: 创建 `.gitignore`**
 
@@ -154,13 +146,12 @@ git commit -m "docs: add verified dynamic feed response sample"
 **Files:**
 - Create: `package.json`, `vite.config.ts`, `tsconfig.json`, `index.html`, `src/main.tsx`, `src/App.tsx`
 
-**Step 1: 配置 npm 走代理（`--location=project` 写入项目内 `.npmrc`，避免污染用户全局配置）**
+**Step 1: （本机环境相关，已不适用）**
 
-```powershell
-cd E:\ds\bili-follow-feed
-npm config set proxy http://127.0.0.1:7897 --location=project
-npm config set https-proxy http://127.0.0.1:7897 --location=project
-```
+> 原始计划里这一步是"让 npm 走本机代理并写入项目内 `.npmrc`"。
+> 那是开发机特有的网络配置，**已从仓库移除**（`.npmrc` 现在在 `.gitignore` 里）——
+> 提交上去的话别人 `npm install` 会去连一个不存在的本地代理而失败。
+> 在当前仓库里这一步**不需要执行**。
 
 **Step 2: 创建 `package.json`**
 

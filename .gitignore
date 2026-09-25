@@ -1,4 +1,9 @@
-﻿node_modules/
-dist/
+node_modules/
 *.local
 .DS_Store
+
+# 本地 npm 代理配置。里面是 `proxy=http://127.0.0.1:<port>` ——
+# 提交上去的话，别人 clone 后 `npm install` 会去连一个不存在的本地代理而失败。
+.npmrc
+
+# 注意：dist/ **不**忽略 —— 用户脚本要靠 raw 链接安装和自动更新，构建产物必须在仓库里。

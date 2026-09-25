@@ -1,3 +1,7 @@
 # 禁止 git 做行尾转换。Windows 上默认的 LF->CRLF 转换会在 git add 时
 # 改写工作区文件，导致编辑工具的"文件自读取后已被修改"误报。
 * -text
+
+# 构建产物。它被提交进仓库（用户脚本靠 raw 链接分发），但它是 296 KB 的压缩单行文件，
+# 让 git 去 diff 它只会产生一个毫无信息量的巨型 diff。标记成不 diff。
+dist/*.user.js -diff

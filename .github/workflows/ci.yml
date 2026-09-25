@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # 和本地同一条命令：tsc --noEmit && vitest run
+      # 带类型检查是刻意的 —— 这个项目有过只有 tsc 能抓、单测完全抓不到的 bug。
+      - run: npm test
+
+      # 构建产物是提交进仓库的，所以顺手确认它和源码一致（防止改了源码忘了 build）
+      - run: npm run build
+      - name: 确认 dist 是最新的
+        run: |
+          if ! git diff --quiet -- dist/; then
+            echo "::error::dist/ 与源码不一致 —— 请本地跑 npm run build 并把产物一起提交"
+            git diff --stat -- dist/
+            exit 1
+          fi

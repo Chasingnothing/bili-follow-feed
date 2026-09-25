@@ -78,7 +78,7 @@ App 重渲染 → Sidebar 无谓地重渲染**全部 UP 行** ×最多 40 次。
 
 ### 1.3 游标 checkpoint（既有 bug，独立）
 
-见 `HANDOFF.md` §5⑬：翻页时记 `{ count, offset }`，截断时取 `count <= 600` 的最后一个 offset，
+见 [`docs/DESIGN.md`](../DESIGN.md) §4「offset 是键值游标」：翻页时记 `{ count, offset }`，截断时取 `count <= 600` 的最后一个 offset，
 游标不再置 `null`。消除"越过 600 条后每次刷新都要从第 1 页重走"。
 
 ### 1.4 关注列表 2000 上限（既有 bug，独立）
@@ -311,7 +311,7 @@ bff:up:<mid>  =  { at, lastUsedAt, cards: [...5 条] }    // 每条约 1.6K 单�
 > 刷新后回到第一层只是"再点一下"，不重发请求、不丢数据。
 > 用零代价去换一个跨会话悄悄累积的状态，这个交换是亏的。
 >
-> 完整的推论在 `HANDOFF.md` §5⑱。老用户的 localStorage 里会留下 `bff:upLayers` 死键，无害。
+> 完整的推论在 [`docs/DESIGN.md`](../DESIGN.md) §3⑫。老用户的 localStorage 里会留下 `bff:upLayers` 死键，无害。
 
 ---
 

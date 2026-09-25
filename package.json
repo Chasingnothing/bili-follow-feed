@@ -1,8 +1,25 @@
 {
   "name": "bili-follow-feed",
   "private": true,
-  "version": "0.9.5",
+  "version": "1.0.0",
   "type": "module",
+  "description": "浏览器用户脚本：把 B 站的关注动态流渲染成按分组组织的卡片墙，绕开首页推荐流",
+  "license": "MIT",
+  "author": "Chasingnothing",
+  "homepage": "https://github.com/Chasingnothing/bili-follow-feed#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Chasingnothing/bili-follow-feed.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Chasingnothing/bili-follow-feed/issues"
+  },
+  "keywords": [
+    "userscript",
+    "tampermonkey",
+    "bilibili",
+    "react"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

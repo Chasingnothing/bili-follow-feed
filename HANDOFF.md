@@ -1,6 +1,6 @@
 # B站「只看关注」— 项目交接文档
 
-> **读这一份就能接手。** 最后更新：2026-09-14，对应 `main @ d49edbe`（v0.9.5）。
+> **读这一份就能接手。** 最后更新：2026-09-25，对应 `main @ 44a499b`（v0.9.5）。
 >
 > 本文档是给**上下文被压缩后的 AI agent** 看的，所以写法偏向"事实 + 原因 + 坑"，而不是营销文案。
 
@@ -60,15 +60,15 @@ B站 首页是**推荐流**（混杂未关注的人），用户看不到自己�
 ### 分支
 
 ```
-* main              3bd2f5c  docs: 模式 2 分页位移确认维持原样 (v0.9.4)      ← 当前主线
-  feat/history-fill 1f9d50d  feat: per-group history fill                ← 已完成但被退回，已被模式 2 取代
+* main             2073a50  docs: 模式 2 分页位移确认维持原样 (v0.9.4)      ← 当前主线
+  feat/history-fill ff12788  feat: per-group history fill                ← 已完成但被退回，已被模式 2 取代
 ```
 
 **`feat/history-fill` 的来龙去脉**：用户说"**接着讨论**"，我给了分析后丢了个设计选择题，用户选完我就**当成开工指令直接做完了**。用户指出越界，于是：
 
 ```
 git branch feat/history-fill     # 保住成果
-git reset --hard e77a018         # main 退回
+git reset --hard 11b2d7d         # main 退回（旧 hash 是 e77a018，2026-09-25 重写作者信息后变了）
 npm run build                    # 重建 dist，避免误装
 ```
 
@@ -537,7 +537,7 @@ export const MAX_LAYER = MAX_PER_UP;   // upSections.ts  ← 都是 5
 | ~~`bff:upLayers`~~ | ~~每个板块的层数~~ | **v0.9.5 起不再落盘**（见 §5⑱）。老用户存储里留有死键，无害 |
 | `bff:schemaVersion` | ⚠️ **写了但从未被调用** | 见 §5⑨ |
 
-### 实测体积（2026-09-14 实测，真实 fixture 卡片）
+### 实测体积（2026-09-19 实测，真实 fixture 卡片）
 
 > ⚠️ **单位陷阱**：`JSON.stringify(s).length` 数的是 **UTF-16 单元**，而 localStorage 按 **2 字节/单元** 计费。
 > 把"单元数"当成"字节数"会让结果**正好差一倍** —— 我在这里错过一次，见 §8。
@@ -682,7 +682,7 @@ Tampermonkey 显示 **Reinstall**（不是 Update）是正常的 —— 从本�
 
 > 第二条与模式 2 无关，**现在就已经存在**（只要用户关注数上千就会明显卡）。
 
-### 跨浏览器可用性（Firefox / Edge）—— 2026-09-14 核实，**代码未改动**
+### 跨浏览器可用性（Firefox / Edge）—— 2026-09-19 核实，**代码未改动**
 
 用户问过"现在这个版本能不能在 Firefox 或 Edge 里用"。**结论：Edge 应该没问题；Firefox 大概率能，
 但有三个点没验证过。** 当时选择"只记录、不改代码"，所以下面 ①②③ 至今仍然成立。
@@ -731,7 +731,7 @@ Chrome 是 10 MiB（已核对 Chromium 源码常量，见 §6）；Firefox 明�
 > 三个浏览器的验证清单：装 Tampermonkey → 打开 `/agent-feed` → 看到卡片墙 + 侧边栏有分组
 > → 模式 2 点「拉取更多」能出内容（这一步同时验证了沙箱里的 `fetch` 带 cookie 和 `localStorage` 可写）。
 
-### 手机端可行性 —— 2026-09-14 核实，**代码未改动**
+### 手机端可行性 —— 2026-09-19 核实，**代码未改动**
 
 用户问过"这个脚本能不能做成手机 app"。当时选择只记录、不动代码。
 **用户是 Android** —— 所以下面 iOS 相关的坑不适用于他，但仍然记下来，因为开源后可能有人用 iPhone。
@@ -740,7 +740,7 @@ Chrome 是 10 MiB（已核对 Chromium 源码常量，见 §6）；Firefox 明�
 
 #### ① 可能根本不需要做 app
 
-Tampermonkey [官方 FAQ](https://www.tampermonkey.net/faq.php?locale=zh&q=Q406)（2026-09-14 现查）
+Tampermonkey [官方 FAQ](https://www.tampermonkey.net/faq.php?locale=zh&q=Q406)（2026-09-19 现查）
 明确支持手机端，同一份 `dist/bili-follow-feed.user.js` 可以直接装：
 
 | 平台 | 怎么装 |

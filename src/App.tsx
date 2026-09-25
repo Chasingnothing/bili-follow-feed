@@ -56,8 +56,6 @@ import {
   SECTION_COLLAPSED_KEY,
   loadMode,
   saveMode,
-  loadUpLayers,
-  saveUpLayers,
   type FeedMode,
 } from './lib/uiState';
 import FeedGrid from './components/FeedGrid';
@@ -167,8 +165,15 @@ export default function App() {
 
   // ── 模式 2（UP 主拉取）────────────────────────────────────────────────
 
-  /** 每个板块的层数（每个 UP 显示前几条）。落盘，刷新后原样恢复 */
-  const [upLayers, setUpLayers] = useState<Record<string, number>>(() => loadUpLayers());
+  /**
+   * 每个板块的层数（每个 UP 显示前几条）。
+   *
+   * **刻意只存内存、不落盘** —— 刷新后一律回到第一层。
+   * 曾经落盘过，结果是"点过「多看一条」的板块被永久记住，跨会话悄悄停在第二层"。
+   * 重置的代价是零（「多看一条」只读缓存、不发请求），所以没有理由持久化。
+   * 理由详见 `lib/uiState.ts` 末尾那段注释。
+   */
+  const [upLayers, setUpLayers] = useState<Record<string, number>>({});
   /**
    * 缓存内容被改动过的计数。
    *
@@ -334,11 +339,8 @@ export default function App() {
   }, []);
 
   const changeLayer = useCallback((groupId: string, next: number) => {
-    setUpLayers((prev) => {
-      const merged = { ...prev, [groupId]: next };
-      saveUpLayers(merged);
-      return merged;
-    });
+    // 只改内存，不落盘 —— 刷新后回到第一层（见 upLayers 的注释）
+    setUpLayers((prev) => ({ ...prev, [groupId]: next }));
     // 揭示缓存内容也算"用过"这些 UP，否则它们会因为"很久没发请求"被先淘汰
     setUpCacheVersion((v) => v + 1);
   }, []);

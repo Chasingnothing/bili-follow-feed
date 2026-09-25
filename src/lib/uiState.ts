@@ -1,5 +1,4 @@
 import { readJson, writeJson } from './storage';
-import { clampLayer } from './upSections';
 
 /** 侧边栏里分组的折叠状态 */
 export const SIDEBAR_COLLAPSED_KEY = 'bff:collapsedGroups';
@@ -7,8 +6,6 @@ export const SIDEBAR_COLLAPSED_KEY = 'bff:collapsedGroups';
 export const SECTION_COLLAPSED_KEY = 'bff:collapsedSections';
 /** 当前模式：动态流 / UP 主拉取 */
 export const MODE_KEY = 'bff:mode';
-/** 模式 2 里每个板块的层数 */
-export const UP_LAYERS_KEY = 'bff:upLayers';
 
 export function loadCollapsed(key: string): Set<string> {
   const arr = readJson<unknown>(key, []);
@@ -38,22 +35,16 @@ export function saveMode(m: FeedMode): boolean {
   return writeJson(MODE_KEY, m);
 }
 
-/**
- * 读回各板块的层数。
+/*
+ * 模式 2 的「层数」**刻意不落盘**。
  *
- * 逐个过 `clampLayer` —— 存储是可手改的，而且 `MAX_LAYER` 将来变了，
- * 老值可能越界。这里收口，组装层就不用再担心。
+ * 它曾经存在 `bff:upLayers` 里，副作用是：你每次在某个板块点过「多看一条」，
+ * 那个板块就被永久记住 —— 过一阵子回头看，各个板块都停在第二层，
+ * 而界面上没有任何提示，用户只觉得"不对劲"。
+ *
+ * 关键在于**重置的代价是零**：「多看一条」只读缓存、不发任何请求，
+ * 刷新后回到第一层，损失的只是"再点一下"。持久化换来的却是跨会话悄悄累积的状态。
+ * 这个交换是亏的，所以层数只活在组件 state 里（`App.tsx` 的 `upLayers`）。
+ *
+ * 老用户的 localStorage 里可能还留着一个 `bff:upLayers` 死键，不再被读取，无害。
  */
-export function loadUpLayers(): Record<string, number> {
-  const raw = readJson<unknown>(UP_LAYERS_KEY, {});
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-  const out: Record<string, number> = {};
-  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-    out[k] = clampLayer(v);
-  }
-  return out;
-}
-
-export function saveUpLayers(layers: Record<string, number>): boolean {
-  return writeJson(UP_LAYERS_KEY, layers);
-}

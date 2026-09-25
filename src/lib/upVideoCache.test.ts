@@ -113,6 +113,8 @@ describe('cachedMids / fetchedAt', () => {
 
   it('其它键不会被误认成 UP 缓存', () => {
     localStorage.setItem('bff:feedCache', '{}');
+    // `bff:upLayers` 是旧版本留下的**死键**（v0.9.5 起层数不再落盘）。
+    // 故意用它当例子：老用户的存储里就有这个键，得证明它不会被当成 UP 缓存。
     localStorage.setItem('bff:upLayers', '{}');
     saveUpItems(33, [item('C')], 1000);
     expect(cachedMids()).toEqual([33]);

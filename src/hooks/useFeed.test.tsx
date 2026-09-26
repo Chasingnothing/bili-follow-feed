@@ -393,6 +393,87 @@ describe('C. 时间窗', () => {
 
     expect(JSON.parse(localStorage.getItem('bff:feedHours')!)).toBe(72);
   });
+
+  /**
+   * 用户报告：多个浏览器都装了之后，把界面从「3 天前」切到「1 天前」，
+   * **一张卡片都不渲染**。下面两条按用户的真实动作复现。
+   *
+   * 60 张卡跨 66 小时，所以 24 小时窗口里应该有二十多张 —— 渲染出 0 张必然是 bug。
+   */
+  it('C4 72h → 24h：页面同一个会话内直接切窗口', async () => {
+    const pages = scriptedPages(12, 5, nowSec(), 4000);
+    const { source } = sourceFrom(pages);
+    const feed = mountFeed(quick({ source }));
+
+    act(() => feed().setWindowHours(72));
+    await settle();
+    const at72 = feed().cards.length;
+    expect(at72).toBeGreaterThan(0);
+
+    act(() => feed().setWindowHours(24));
+    await settle();
+
+    expect(feed().cards.length).toBeGreaterThan(0);
+    expect(feed().cards.every((c) => c.pubdate >= cutoffFor(24, nowMs))).toBe(true);
+  });
+
+  it('C5 刷新页面（缓存里是 72h）之后再切到 24h', async () => {
+    const pages = scriptedPages(12, 5, nowSec(), 4000);
+
+    // ── 第一次会话：拉 72h 并落盘
+    {
+      const { source } = sourceFrom(pages);
+      const feed = mountFeed(quick({ source }));
+      act(() => feed().setWindowHours(72));
+      await settle();
+      expect(feed().cards.length).toBeGreaterThan(0);
+    }
+    act(() => root.unmount());
+    root = createRoot(container);
+
+    // ── 第二次会话：从缓存铺上（此时 hours 还是 72），然后切到 24h
+    const { source: source2 } = sourceFrom(pages);
+    const feed2 = mountFeed(quick({ source: source2 }));
+    await settle();
+    expect(feed2().cards.length).toBeGreaterThan(0);
+
+    act(() => feed2().setWindowHours(24));
+    await settle();
+
+    expect(feed2().cards.length).toBeGreaterThan(0);
+    expect(feed2().cards.every((c) => c.pubdate >= cutoffFor(24, nowMs))).toBe(true);
+  });
+
+  /**
+   * 上面两条用的是"瞬间 resolve"的假数据源，覆盖不到**真实的异步时序**：
+   * 真实环境里 delayMs/flushMs 都存在，用户切窗口时后台补齐通常**还在飞**。
+   *
+   * 这条复现那个时序：首屏出来后补齐被 gate 挂住 → 此时切到 24h →
+   * 才放行。这是用户最可能真实遇到的路径。
+   */
+  it('C6 后台补齐还在飞的时候切到 24h（真实时序）', async () => {
+    const gate = gatedSleep();
+    const pages = scriptedPages(12, 5, nowSec(), 4000);
+    const { source } = sourceFrom(pages);
+    const feed = mountFeed(quick({ source, sleep: gate.sleep }));
+
+    // 首屏出来了，但后台补齐卡在 sleep 上
+    await settle();
+    const early = feed().cards.length;
+    expect(early).toBeGreaterThan(0);
+    expect(gate.pending()).toBeGreaterThan(0);
+
+    // 趁补齐还在飞，切窗口
+    act(() => feed().setWindowHours(24));
+    await settle();
+
+    // 放行所有挂起的 sleep，让两条链都跑完
+    await gate.drain();
+    await settle();
+
+    expect(feed().cards.length).toBeGreaterThan(0);
+    expect(feed().cards.every((c) => c.pubdate >= cutoffFor(24, nowMs))).toBe(true);
+  });
 });
 
 // ── D. 加载更多 ─────────────────────────────────────────────────────────
@@ -564,6 +645,53 @@ describe('F. 游标与缓存', () => {
 // ── G. 错误 ─────────────────────────────────────────────────────────────
 
 describe('G. 错误', () => {
+  /**
+   * ⚠️ **这不是"应该通过"的测试，是记录一个真实的缺口。**
+   *
+   * `feed/all` 返回 `code: 0` 但条目列表为空时（风控、服务端抖动、账号异常都可能这样），
+   * `applyPage` 没有"这次一个条目都没收到"的判断，`fullLoad` 也不区分
+   * "真的没有内容"和"这次没拿到内容" —— 结果是：
+   *   ① 页面完全空白，**而且不报任何错**（用户看到的和"你没关注任何人"一模一样）
+   *   ② 这个空结果还会被 `persistCache` 落盘，把本来好的缓存覆盖掉
+   *
+   * 用户报告的"切到 1 天后一张卡都不渲染"最像这条链。
+   */
+  it('【已知缺口】接口返回空列表 → 全空、不报错、且空结果被落盘', async () => {
+    const empty: FeedPage = { items: [], nextOffset: null, hasMore: false, oldestPubTs: 0 };
+    const { source, calls } = sourceFrom([empty, empty, empty]);
+    const feed = mountFeed(quick({ source }));
+
+    await settle();
+
+    // ① 一张卡都没有
+    expect(feed().cards).toHaveLength(0);
+    // ② 没有任何错误提示 —— 用户无从判断是"没内容"还是"出问题了"
+    //    （接口明明成功返回了，只是空的）
+    expect(feed().error).toBeNull();
+    // ③ 空结果被写进了缓存，把可能更好的旧缓存覆盖掉
+    const cached = JSON.parse(localStorage.getItem('bff:feedCache')!) as { cards: unknown[] };
+    expect(cached.cards).toHaveLength(0);
+    // ④ 而且不会只请求一次：`coversWindow([])` 恒为 false，
+    //    于是它认定"还没覆盖到窗口"，继续往下翻（上限 40 页）
+    expect(calls.length).toBeGreaterThan(1);
+  });
+
+  it('空列表即使带 has_more:true 也只请求一次就停（不会风暴）', async () => {
+    // 我原本以为这里会翻满 40 页上限 —— 实测**不会**：
+    // `fillToCutoff` 用 `oldestPubTs === 0`（空页）判定到头，与 has_more 无关。
+    // 记下来当作回归保护，免得以后有人删掉那个判断。
+    const empty: FeedPage = { items: [], nextOffset: 'x', hasMore: true, oldestPubTs: 0 };
+    const many = Array.from({ length: 60 }, () => empty);
+    const { source, calls } = sourceFrom(many);
+    const feed = mountFeed(quick({ source }));
+
+    await settle();
+
+    expect(feed().cards).toHaveLength(0);
+    // 首页 1 次 + runFill 1 次 = 2，然后就因为"空页 = 到头"停了
+    expect(calls).toHaveLength(2);
+  });
+
   it('接口报错时把原因暴露出来，而不是白屏', async () => {
     const source: FeedDataSource = {
       async fetchPage() {

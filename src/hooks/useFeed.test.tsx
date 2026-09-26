@@ -287,8 +287,8 @@ describe('B. 缓存命中', () => {
     expect(feed().cards.map((c) => c.id)).not.toContain('BVold');
   });
 
-  it('B1 缓存不到 60 秒 → 一个请求都不发', async () => {
-    seedCache(nowMs - 30_000, [card('BVcached', nowSec() - 100)]);
+  it('B1 缓存不到 10 秒 → 一个请求都不发（只防手抖连按刷新）', async () => {
+    seedCache(nowMs - 5_000, [card('BVcached', nowSec() - 100)]);
     const { source, calls } = sourceFrom([]);
     const feed = mountFeed(quick({ source }));
 
@@ -296,6 +296,31 @@ describe('B. 缓存命中', () => {
 
     expect(calls).toEqual([]);
     expect(feed().cards.map((c) => c.id)).toEqual(['BVcached']);
+  });
+
+  /**
+   * 回归：**浏览器 F5 应该检查更新**（用户报告的问题 1）。
+   *
+   * 防抖原本是 60 秒，于是"打开页面 → 没看到新的 → 按 F5 再确认一次"
+   * 这个再正常不过的操作会**落在防抖里，一个请求都不发**。
+   * 现在只有 10 秒，30 秒的缓存会照常去检查。
+   */
+  it('B1b 缓存 30 秒 → 会去检查更新（旧的 60 秒防抖会跳过这里）', async () => {
+    const known = card('BVknown', nowSec() - 100);
+    seedCache(nowMs - 30_000, [known]);
+    const page1: FeedPage = {
+      items: [card('BVnew', nowSec()), known],
+      nextOffset: 'off1',
+      hasMore: true,
+      oldestPubTs: known.pubdate,
+    };
+    const { source, calls } = sourceFrom([page1]);
+    const feed = mountFeed(quick({ source }));
+
+    await settle();
+
+    expect(calls).toHaveLength(1);
+    expect(feed().cards.map((c) => c.id)).toEqual(['BVnew', 'BVknown']);
   });
 
   it('B2 缓存过期 → 只拉 1 页就停（撞见已知条目）', async () => {
@@ -328,6 +353,34 @@ describe('B. 缓存命中', () => {
 
     expect(calls.length).toBeGreaterThan(0);
     expect(feed().cards.map((c) => c.id)).not.toContain('BVcached');
+  });
+
+  /**
+   * 回归：**刷新页面时增量请求报错，以前是静默失败**。
+   *
+   * 界面上的「刷新」按钮走 `fullLoad`（有 catch），浏览器 F5 走缓存命中后的
+   * `incremental` —— 而 `incremental` 原本只有 `try/finally`、**没有 catch**：
+   * 异常一路穿出 `load`（调用处是 `void load(...)`），变成未处理的 rejection，
+   * `setError` 永远不会被调用。
+   *
+   * 用户看到的是"刷新了但没有检查更新"，实际是**检查了、失败了、没说话**。
+   */
+  it('刷新页面时增量请求报错，要把原因暴露出来（不再是静默失败）', async () => {
+    const known = card('BVknown', nowSec() - 100);
+    seedCache(nowMs - 2 * HOUR_S * 1000, [known]);
+    const source: FeedDataSource = {
+      async fetchPage() {
+        throw new Error('B站接口返回 -412：请求被拦截');
+      },
+    };
+    const feed = mountFeed(quick({ source }));
+
+    await settle();
+
+    // 缓存照常显示（拿不到新的就先看旧的，这部分行为是对的）
+    expect(feed().cards.map((c) => c.id)).toEqual(['BVknown']);
+    // 但失败必须说出来 —— 以前这里是 null
+    expect(feed().error).toBe('B站接口返回 -412：请求被拦截');
   });
 });
 
@@ -442,6 +495,52 @@ describe('C. 时间窗', () => {
 
     expect(feed2().cards.length).toBeGreaterThan(0);
     expect(feed2().cards.every((c) => c.pubdate >= cutoffFor(24, nowMs))).toBe(true);
+  });
+
+  /**
+   * 回归：**用户报告的核心症状**。
+   *
+   * 场景（和用户描述的一模一样）：缓存里最新的内容是 30 小时前，
+   * 时间窗是 3 天 → 切到 1 天 → 筛出来是空数组 → **界面一片空白**。
+   *
+   * 这不是"真的没有内容"，而是"缓存可能旧了"。以前缩窗口**一个请求都不发**，
+   * 所以只要缓存没跟上，缩窗口就必然是白屏。
+   *
+   * 修法：筛出空时先花 1 个请求去顶部确认一次，有更新的就补进来。
+   */
+  it('缩到"窗口内一条都没有"时要去确认一次，有更新的就补进来', async () => {
+    const old = card('BVold', nowSec() - 30 * HOUR_S); // 30 小时前 → 落在 24h 窗口之外
+    // 缓存放的是 72h 且"刚刚写过"，这样挂载时不会触发增量刷新 ——
+    // 把检查的时机隔离到"切换窗口"这一步
+    localStorage.setItem(
+      'bff:feedCache',
+      JSON.stringify({ v: 2, at: nowMs, hours: 72, cards: [old], tailOffset: 'offX' }),
+    );
+    // 时间窗也要种上 —— 否则 load() 用默认的 24 去比，缓存的 hours=72 不匹配会被整个丢弃
+    localStorage.setItem('bff:feedHours', '72');
+
+    const page1: FeedPage = {
+      items: [card('BVnew', nowSec() - HOUR_S), old],
+      nextOffset: 'off1',
+      hasMore: true,
+      oldestPubTs: old.pubdate,
+    };
+    const { source, calls } = sourceFrom([page1, page1]);
+    const feed = mountFeed(quick({ source }));
+
+    await settle();
+    // 挂载时缓存是新的（0 秒前写的），所以这里一个请求都没发
+    expect(calls).toHaveLength(0);
+    expect(feed().cards.map((c) => c.id)).toEqual(['BVold']);
+
+    // 切到 1 天：BVold 在窗口之外 → 筛出空 → 必须去确认一次
+    act(() => feed().setWindowHours(24));
+    await settle();
+
+    expect(calls.length).toBeGreaterThan(0);
+    // 确认之后拿到了新内容，界面不该是空的
+    expect(feed().cards.map((c) => c.id)).toContain('BVnew');
+    expect(feed().cards.every((c) => c.pubdate >= cutoffFor(24, nowMs))).toBe(true);
   });
 
   /**

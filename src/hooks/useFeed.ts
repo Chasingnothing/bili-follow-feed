@@ -23,8 +23,17 @@ const PAGE_DELAY_MS = 400;
 const MAX_FILL_PAGES = 40;
 /** 增量刷新时最多往下追几页；追不上说明离线太久，退回完整加载 */
 const MAX_INCREMENTAL_PAGES = 15;
-/** 距上次写入多久之内连增量刷新都跳过（防抖，避免连续刷新打接口） */
-const FRESH_MS = 60 * 1000;
+/**
+ * 距上次写入多久之内连增量刷新都跳过。
+ *
+ * 原本是 60 秒，但那段防抖**正好挡住用户的正常操作**：打开页面（检查一次并落盘）
+ * → 没看到新内容 → 按 F5 想再确认一次 → 落在 60 秒内 → **直接跳过，一个请求都不发**。
+ * 用户的心智模型是"刷新就该检查"，于是这就成了"点了刷新没反应"。
+ *
+ * 现在只有 10 秒：`fetchNewer` 撞见已知条目就停，所以一次检查通常**只有 1 个请求**，
+ * 真正值得防的只是"手抖连按两次刷新"，不需要 60 秒那么长。
+ */
+const FRESH_MS = 10 * 1000;
 
 const CACHE_KEY = 'bff:feedCache';
 /**
@@ -434,7 +443,7 @@ export function useFeed(overrides: Partial<FeedDeps> = {}, enabled = true): Feed
    * 追到上限还没撞见（离线太久）就返回 false，由调用方退回完整加载。
    */
   const incremental = useCallback(
-    async (cachedCards: FeedItem[], myGen: number): Promise<'merged' | 'fallback'> => {
+    async (cachedCards: FeedItem[], myGen: number): Promise<'merged' | 'fallback' | 'failed'> => {
       pauseRequestedRef.current = false;
       setPaused(false);
       setRefreshing(true);
@@ -448,6 +457,23 @@ export function useFeed(overrides: Partial<FeedDeps> = {}, enabled = true): Feed
           sleep,
           shouldStop: () => pauseRequestedRef.current,
         });
+      } catch (e) {
+        /*
+         * ⚠️ 这里原本是 `try/finally`，**没有 catch**。
+         *
+         * 后果：增量请求一旦抛错（最典型的是 B站 风控返回 `-412 请求被拦截`），
+         * 异常会一路穿出 `load`，而调用处是 `void load(...)` ——
+         * 于是它变成一个**未处理的 promise rejection**，`setError` 永远不会被调用。
+         *
+         * 用户看到的是：一份**过期的缓存，且毫无提示**。
+         * 症状就是"刷新页面不检查最新更新"—— 实际上它检查了，只是失败了没说话。
+         * 更糟的是失败时不会 `persistCache`，所以 `cached.at` 保持旧值，
+         * 每次刷新都重试、每次都静默失败，故障自我延续。
+         *
+         * 这与 §8 记的"静默失败"是同一类，只不过以前在**写**路径上，这次在读路径上。
+         */
+        setError(e instanceof Error ? e.message : String(e));
+        return 'failed';
       } finally {
         setRefreshing(false);
       }
@@ -550,7 +576,25 @@ export function useFeed(overrides: Partial<FeedDeps> = {}, enabled = true): Feed
       // 先按新窗口刷新显示。缩小窗口的情况到这里就结束了，一个请求都不发。
       flushNow();
 
-      if (h === 0 || coversWindow(all, cutoffFor(h, now()))) {
+      /*
+       * 窗口内一条都没有 —— 这时候**不能直接下"没有内容"的结论**。
+       *
+       * 因为 `cardsRef` 里最新的那条**未必真的就是最新的**：缓存可能是旧的
+       * （增量刷新曾经静默失败过，见 incremental 里那段注释）。
+       * 于是"缩到 1 天"就会把一份陈旧的缓存筛成空数组，界面上是一片空白 ——
+       * 用户看到的是"没有视频"，而真相是"缓存没跟上"。
+       *
+       * 所以花 1 个请求去顶部确认一次。真有更新的会补进来；确实没有，
+       * 界面再显示"此时间窗内没有内容"。
+       */
+      if (withinWindow(all, cutoffFor(h, now())).length === 0) {
+        await incremental(all, myGen);
+        if (myGen !== gen.current) return;
+        flushNow();
+        // 补到新的之后深度可能也变了，后面继续按新情况判断
+      }
+
+      if (h === 0 || coversWindow(cardsRef.current, cutoffFor(h, now()))) {
         setCovered(true);
         persistCache(h);
         return;
@@ -564,7 +608,7 @@ export function useFeed(overrides: Partial<FeedDeps> = {}, enabled = true): Feed
 
       await runFill(h, myGen, tailOffset.current);
     },
-    [fullLoad, runFill, persistCache, flushNow],
+    [fullLoad, runFill, persistCache, flushNow, incremental],
   );
 
   const changeWindow = useCallback(

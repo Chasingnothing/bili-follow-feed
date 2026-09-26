@@ -266,6 +266,12 @@ export default function App() {
     [sortedAll, filter, readSet, typeFilter],
   );
 
+  /** 给"窗口内没有内容"的提示用，和工具栏那个下拉里的说法保持一致 */
+  const windowLabel =
+    feed.windowHours === 0
+      ? '仅加载首页'
+      : `加载到 ${WINDOW_OPTIONS.find((o) => o.hours === feed.windowHours)?.label ?? ''}前`;
+
   /** 主区不渲染「隐藏」板块 —— 它只是管理入口，其内容已被过滤掉 */
   const sectionGroups = useMemo(() => groups.filter((g) => g.id !== HIDDEN_ID), [groups]);
 
@@ -915,6 +921,25 @@ export default function App() {
         )}
 
         {feed.error && <div className="bff-empty">接口出错：{feed.error}</div>}
+
+        {/*
+         * 模式 1 下"一张卡都没有"以前是**完全空白**的 —— 用户没法区分
+         * "这个时间窗里确实没内容"和"出问题了"。现在明确说出来。
+         *
+         * 走到这里时已经做过确认（切换窗口时会先查一次有没有更新，
+         * 见 useFeed 的 applyWindow），所以可以放心地说"确实没有"。
+         */}
+        {mode === 'feed' &&
+          !feed.error &&
+          !feed.loading &&
+          !feed.filling &&
+          feed.cards.length === 0 && (
+            <div className="bff-empty">
+              当前时间窗（{windowLabel}）内没有内容。
+              <br />
+              可以把时间窗调大，或过一会儿再刷新 —— 关注的人可能只是这段时间没更新。
+            </div>
+          )}
 
         {mode === 'upPull' && upSections.length === 0 && (
           <div className="bff-empty">

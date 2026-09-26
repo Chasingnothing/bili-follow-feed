@@ -15,7 +15,7 @@ export default defineConfig({
       userscript: {
         name: 'B站 只看关注',
         namespace: REPO,
-        version: '1.0.0',
+        version: '1.0.1',
         description:
           '只显示已关注 UP 主的内容：把关注动态流渲染成按分组组织的卡片墙，绕开首页推荐流（视频 + 图文）',
         author: 'Chasingnothing',

@@ -1,7 +1,7 @@
 {
   "name": "bili-follow-feed",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "description": "浏览器用户脚本：把 B 站的关注动态流渲染成按分组组织的卡片墙，绕开首页推荐流",
   "license": "MIT",

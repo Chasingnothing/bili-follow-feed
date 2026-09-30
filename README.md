@@ -62,6 +62,7 @@ https://www.bilibili.com/agent-feed
 **首次使用**：脚本会读你的关注列表和 B 站分组，几秒钟后给出侧边栏。
 
 > **不需要登录任何额外账号。** 脚本用的是你浏览器里已有的 B 站登录态。
+具体讲解视频：https://www.bilibili.com/video/BV1fAh96ZEPa/?vd_source=b26070a585b972d558cde02ca1697012
 
 ---
 
